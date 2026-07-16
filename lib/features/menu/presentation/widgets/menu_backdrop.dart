@@ -4,110 +4,177 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 
-class MenuBackdrop extends StatelessWidget {
-  const MenuBackdrop({super.key});
+/// Bottom layer of the menu: a changing color field and large visual motif.
+class MenuDestinationBackdrop extends StatelessWidget {
+  const MenuDestinationBackdrop({
+    super.key,
+    required this.accent,
+    required this.icon,
+  });
+
+  final Color accent;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
     return RepaintBoundary(
-      child: CustomPaint(
-        painter: _MenuBackdropPainter(),
-        child: const SizedBox.expand(),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.lerp(accent, AppColors.earth, 0.35)!,
+              Color.lerp(accent, AppColors.ink, 0.72)!,
+              AppColors.ink,
+            ],
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned(
+              right: -90,
+              top: -120,
+              child: _BackdropOrb(
+                size: 430,
+                color: AppColors.bone.withValues(alpha: 0.055),
+              ),
+            ),
+            Positioned(
+              right: 110,
+              bottom: -180,
+              child: _BackdropOrb(
+                size: 520,
+                color: accent.withValues(alpha: 0.1),
+              ),
+            ),
+            Align(
+              alignment: const Alignment(0.72, -0.16),
+              child: Icon(
+                icon,
+                size: 270,
+                color: AppColors.bone.withValues(alpha: 0.82),
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    blurRadius: 34,
+                    offset: const Offset(0, 16),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _MenuBackdropPainter extends CustomPainter {
+/// Second menu layer: the fixed dark navigation panel and its jagged edge.
+class MenuLeftPanel extends StatelessWidget {
+  const MenuLeftPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const RepaintBoundary(
+      child: CustomPaint(
+        painter: _MenuLeftPanelPainter(),
+        child: SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _MenuLeftPanelPainter extends CustomPainter {
+  const _MenuLeftPanelPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
-    final leftRect = Offset.zero & size;
-    final leftPaint = Paint()
+    final bounds = Offset.zero & size;
+    final edgePoints = _edgePoints(size);
+    final edge = Path()..moveTo(edgePoints.first.dx, edgePoints.first.dy);
+    for (final point in edgePoints.skip(1)) {
+      edge.lineTo(point.dx, point.dy);
+    }
+    final panel = Path()
+      ..moveTo(0, 0)
+      ..lineTo(edgePoints.first.dx, edgePoints.first.dy);
+    for (final point in edgePoints.skip(1)) {
+      panel.lineTo(point.dx, point.dy);
+    }
+    panel
+      ..lineTo(0, size.height)
+      ..close();
+
+    final panelPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [AppColors.deepEarth, AppColors.ink],
-      ).createShader(leftRect);
-    canvas.drawRect(leftRect, leftPaint);
+      ).createShader(bounds);
+    canvas.drawPath(panel, panelPaint);
 
-    final splitX = size.width * 0.56;
-    final rightPath = Path()
-      ..moveTo(splitX, 0)
-      ..lineTo(splitX + size.width * 0.025, size.height * 0.12)
-      ..lineTo(splitX - size.width * 0.012, size.height * 0.25)
-      ..lineTo(splitX + size.width * 0.035, size.height * 0.41)
-      ..lineTo(splitX + size.width * 0.008, size.height * 0.57)
-      ..lineTo(splitX + size.width * 0.055, size.height * 0.73)
-      ..lineTo(splitX + size.width * 0.03, size.height * 0.87)
-      ..lineTo(splitX + size.width * 0.075, size.height)
-      ..lineTo(size.width, size.height)
-      ..lineTo(size.width, 0)
-      ..close();
-
-    final rightPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomRight,
-        colors: [Color(0xFF7A3C24), Color(0xFF2A1811)],
-      ).createShader(leftRect);
-    canvas.drawPath(rightPath, rightPaint);
-
-    final speckPaint = Paint()..color = AppColors.sand.withValues(alpha: 0.07);
-    for (var i = 0; i < 30; i++) {
-      final x = (i * 83.0) % size.width;
-      final y = (i * i * 31.0) % size.height;
-      canvas.drawCircle(Offset(x, y), 1.5 + (i % 4).toDouble(), speckPaint);
+    canvas.save();
+    canvas.clipPath(panel);
+    final speckPaint = Paint()..color = AppColors.sand.withValues(alpha: 0.055);
+    for (var index = 0; index < 34; index++) {
+      final x = (index * 83.0) % (size.width * 0.62);
+      final y = (index * index * 31.0) % size.height;
+      canvas.drawCircle(Offset(x, y), 1.3 + (index % 4).toDouble(), speckPaint);
     }
+    canvas.restore();
 
-    final fracturePaint = Paint()
-      ..color = AppColors.bone.withValues(alpha: 0.74)
+    final edgePaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.88)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(2, size.width * 0.0022)
+      ..strokeWidth = math.max(5, size.width * 0.0045)
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-    final fracture = Path()
-      ..moveTo(splitX, 0)
-      ..lineTo(splitX + size.width * 0.025, size.height * 0.12)
-      ..lineTo(splitX - size.width * 0.012, size.height * 0.25)
-      ..lineTo(splitX + size.width * 0.035, size.height * 0.41)
-      ..lineTo(splitX + size.width * 0.008, size.height * 0.57)
-      ..lineTo(splitX + size.width * 0.055, size.height * 0.73)
-      ..lineTo(splitX + size.width * 0.03, size.height * 0.87)
-      ..lineTo(splitX + size.width * 0.075, size.height);
-    canvas.drawPath(fracture, fracturePaint);
+    canvas.drawPath(edge, edgePaint);
+
+    final glowPaint = Paint()
+      ..color = AppColors.bone.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    canvas.drawPath(edge, glowPaint);
+  }
+
+  List<Offset> _edgePoints(Size size) {
+    final width = size.width;
+    final height = size.height;
+    return [
+      Offset(width * 0.61, 0),
+      Offset(width * 0.625, height * 0.08),
+      Offset(width * 0.612, height * 0.15),
+      Offset(width * 0.64, height * 0.23),
+      Offset(width * 0.625, height * 0.31),
+      Offset(width * 0.66, height * 0.4),
+      Offset(width * 0.645, height * 0.49),
+      Offset(width * 0.68, height * 0.59),
+      Offset(width * 0.668, height * 0.68),
+      Offset(width * 0.695, height * 0.77),
+      Offset(width * 0.688, height * 0.86),
+      Offset(width * 0.72, height),
+    ];
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class FossilSeal extends StatelessWidget {
-  const FossilSeal({super.key, required this.size});
+class _BackdropOrb extends StatelessWidget {
+  const _BackdropOrb({required this.size, required this.color});
 
   final double size;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.ink.withValues(alpha: 0.58),
-        border: Border.all(color: AppColors.amber, width: size * 0.035),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.amber.withValues(alpha: 0.18),
-            blurRadius: 28,
-            spreadRadius: 4,
-          ),
-        ],
-      ),
-      child: Icon(
-        Icons.travel_explore_rounded,
-        size: size * 0.54,
-        color: AppColors.bone,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
     );
   }
 }

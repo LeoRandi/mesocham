@@ -23,16 +23,70 @@ void main() {
     };
   }
 
-  testWidgets('Tab focuses the menu option and Enter opens it', (tester) async {
+  testWidgets('Tab and number keys focus the four top-level menu options', (
+    tester,
+  ) async {
     await pumpGame(tester);
 
-    const menuButtonKey = ValueKey('menu-fossil-race');
-    final menuButton = find.byKey(menuButtonKey);
+    final arena = find.byKey(const ValueKey('menu-option-arena'));
+    final excavation = find.byKey(const ValueKey('menu-option-excavation'));
+    final missions = find.byKey(const ValueKey('menu-option-missions'));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
-    expect(focusNodeFor(tester, menuButton).hasFocus, isTrue);
+    expect(focusNodeFor(tester, arena).hasFocus, isTrue);
 
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(focusNodeFor(tester, excavation).hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.numpad4);
+    await tester.pump();
+    expect(focusNodeFor(tester, missions).hasFocus, isTrue);
+    expect(find.byKey(const ValueKey('description-missions')), findsOneWidget);
+    expect(find.text('4'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(focusNodeFor(tester, missions).hasFocus, isTrue);
+    expect(find.text('YOUR CHAMPION'), findsNothing);
+  });
+
+  testWidgets('Arena opens its submenu and Fossil Race launches the battle', (
+    tester,
+  ) async {
+    await pumpGame(tester);
+
+    final arena = find.byKey(const ValueKey('menu-option-arena'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+    await tester.pump();
+    expect(focusNodeFor(tester, arena).hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final fossilRace = find.byKey(const ValueKey('menu-option-fossil-race'));
+    final extinctionColiseum = find.byKey(
+      const ValueKey('menu-option-extinction-coliseum'),
+    );
+    expect(fossilRace, findsOneWidget);
+    expect(extinctionColiseum, findsOneWidget);
+    expect(find.byKey(const ValueKey('menu-option-tutorial')), findsOneWidget);
+    expect(focusNodeFor(tester, fossilRace).hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(focusNodeFor(tester, extinctionColiseum).hasFocus, isTrue);
+    expect(find.text('YOUR CHAMPION'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(arena, findsOneWidget);
+    expect(focusNodeFor(tester, arena).hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.text('YOUR CHAMPION'), findsOneWidget);
@@ -43,9 +97,9 @@ void main() {
   ) async {
     await pumpGame(tester);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    Navigator.of(
+      tester.element(find.byType(Scaffold)),
+    ).pushNamed<void>('/battle');
     await tester.pumpAndSettle();
 
     final fight = find.byKey(const ValueKey('battle-action-1'));
