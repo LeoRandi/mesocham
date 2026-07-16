@@ -1,16 +1,24 @@
-# mesocham
+# Mesozoic Champions
 
-A new Flutter project.
+A responsive Flutter demo of the single-player **Fossil Race** mode. The demo
+runs on Android, web, and desktop targets and keeps mobile play in landscape.
 
-## Getting Started
+## Demo loop
 
-This project is a starting point for a Flutter application.
+1. Select **Fossil Race** from the game menu.
+2. Select **Fight** in the battle room.
+3. Choose Rock, Paper, or Scissors. The rival always locks in Rock.
+4. Select **Showdown** to resolve damage and start the next turn.
 
-A few resources to get you started if this is your first Flutter project:
+Rock beats Scissors, Scissors beats Paper, and Paper beats Rock. On a draw,
+both champions take half of the strongest attack. Health changes are animated.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Run
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter pub get
+flutter run -d chrome
+```
+
+Use `flutter devices` and replace `chrome` with an Android or desktop device to
+run the same demo on another supported target.
