@@ -1,59 +1,83 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../widgets/menu_backdrop.dart';
 
-class GameMenuPage extends StatelessWidget {
+class GameMenuPage extends StatefulWidget {
   const GameMenuPage({super.key});
+
+  @override
+  State<GameMenuPage> createState() => _GameMenuPageState();
+}
+
+class _GameMenuPageState extends State<GameMenuPage> {
+  final _fossilRaceFocusNode = FocusNode(debugLabel: 'Fossil Race');
 
   void _openFossilRace(BuildContext context) {
     Navigator.of(context).pushNamed('/battle');
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const MenuBackdrop(),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxHeight < 520;
-                final horizontalPadding = compact ? 26.0 : 56.0;
+  void dispose() {
+    _fossilRaceFocusNode.dispose();
+    super.dispose();
+  }
 
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1500),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: horizontalPadding,
-                        vertical: compact ? 16 : 34,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 11,
-                            child: _MenuContent(
-                              compact: compact,
-                              onFossilRacePressed: () =>
-                                  _openFossilRace(context),
+  @override
+  Widget build(BuildContext context) {
+    return Shortcuts(
+      shortcuts: numberFocusShortcuts([_fossilRaceFocusNode]),
+      child: Focus(
+        autofocus: true,
+        skipTraversal: true,
+        child: FocusTraversalGroup(
+          child: Scaffold(
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                const MenuBackdrop(),
+                SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxHeight < 520;
+                      final horizontalPadding = compact ? 26.0 : 56.0;
+
+                      return Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1500),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: horizontalPadding,
+                              vertical: compact ? 16 : 34,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 11,
+                                  child: _MenuContent(
+                                    compact: compact,
+                                    fossilRaceFocusNode: _fossilRaceFocusNode,
+                                    onFossilRacePressed: () =>
+                                        _openFossilRace(context),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 9,
+                                  child: _FeaturePanel(compact: compact),
+                                ),
+                              ],
                             ),
                           ),
-                          Expanded(
-                            flex: 9,
-                            child: _FeaturePanel(compact: compact),
-                          ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -62,10 +86,12 @@ class GameMenuPage extends StatelessWidget {
 class _MenuContent extends StatelessWidget {
   const _MenuContent({
     required this.compact,
+    required this.fossilRaceFocusNode,
     required this.onFossilRacePressed,
   });
 
   final bool compact;
+  final FocusNode fossilRaceFocusNode;
   final VoidCallback onFossilRacePressed;
 
   @override
@@ -106,7 +132,10 @@ class _MenuContent extends StatelessWidget {
               ),
             ),
             SizedBox(height: compact ? 16 : 30),
-            _FossilRaceButton(onPressed: onFossilRacePressed),
+            _FossilRaceButton(
+              focusNode: fossilRaceFocusNode,
+              onPressed: onFossilRacePressed,
+            ),
             SizedBox(height: compact ? 10 : 18),
             Text(
               'Face an AI paleontologist, earn experience,\nand uncover rewards from the Mesozoic Era.',
@@ -185,8 +214,9 @@ class _LevelBadge extends StatelessWidget {
 }
 
 class _FossilRaceButton extends StatefulWidget {
-  const _FossilRaceButton({required this.onPressed});
+  const _FossilRaceButton({required this.focusNode, required this.onPressed});
 
+  final FocusNode focusNode;
   final VoidCallback onPressed;
 
   @override
@@ -195,20 +225,26 @@ class _FossilRaceButton extends StatefulWidget {
 
 class _FossilRaceButtonState extends State<_FossilRaceButton> {
   bool _hovered = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
+    final highlighted = _hovered || _focused;
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedScale(
-        scale: _hovered ? 1.018 : 1,
+        scale: highlighted ? 1.018 : 1,
         alignment: Alignment.centerLeft,
         duration: const Duration(milliseconds: 180),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
+            key: const ValueKey('menu-fossil-race'),
+            focusNode: widget.focusNode,
+            onFocusChange: (focused) => setState(() => _focused = focused),
             onTap: widget.onPressed,
             borderRadius: BorderRadius.circular(16),
             child: AnimatedContainer(
@@ -217,13 +253,13 @@ class _FossilRaceButtonState extends State<_FossilRaceButton> {
               constraints: const BoxConstraints(maxWidth: 500),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               decoration: BoxDecoration(
-                color: _hovered
+                color: highlighted
                     ? AppColors.amber.withValues(alpha: 0.22)
                     : AppColors.bone.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: _hovered ? AppColors.amber : AppColors.sand,
-                  width: _hovered ? 2 : 1,
+                  color: highlighted ? AppColors.amber : AppColors.sand,
+                  width: highlighted ? 2 : 1,
                 ),
               ),
               child: Row(
@@ -243,7 +279,7 @@ class _FossilRaceButtonState extends State<_FossilRaceButton> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'FOSSIL RACE',
+                          '1  FOSSIL RACE',
                           style: TextStyle(
                             color: AppColors.bone,
                             fontSize: 21,

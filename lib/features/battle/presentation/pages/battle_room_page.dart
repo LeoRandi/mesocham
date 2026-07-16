@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../data/demo_battle_factory.dart';
 import '../../domain/entities/battle_gesture.dart';
@@ -25,6 +26,17 @@ class BattleRoomPage extends StatefulWidget {
 
 class _BattleRoomPageState extends State<BattleRoomPage> {
   late final BattleController _controller;
+  final _battleActionFocusNodes = List.generate(
+    4,
+    (index) => FocusNode(debugLabel: 'Battle action ${index + 1}'),
+  );
+  final _moveFocusNodes = List.generate(
+    3,
+    (index) => FocusNode(debugLabel: 'Battle move ${index + 1}'),
+  );
+  final _showdownFocusNode = FocusNode(debugLabel: 'Showdown');
+  final _gameOverMenuFocusNode = FocusNode(debugLabel: 'Game over menu');
+  final _rematchFocusNode = FocusNode(debugLabel: 'Rematch');
 
   @override
   void initState() {
@@ -37,33 +49,99 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     );
   }
 
+  void _startFight() {
+    _controller.startFight();
+    _requestFocusAfterFrame(_moveFocusNodes.first);
+  }
+
+  Future<void> _showdown() async {
+    await _controller.showdown();
+    if (!mounted) return;
+
+    _requestFocusAfterFrame(
+      _controller.phase == BattlePhase.gameOver
+          ? _rematchFocusNode
+          : _battleActionFocusNodes.first,
+    );
+  }
+
+  void _resetBattle() {
+    _controller.resetBattle();
+    _requestFocusAfterFrame(_battleActionFocusNodes.first);
+  }
+
+  void _requestFocusAfterFrame(FocusNode focusNode) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && focusNode.canRequestFocus) {
+        focusNode.requestFocus();
+      }
+    });
+  }
+
+  List<FocusNode?> get _numberedFocusNodes => switch (_controller.phase) {
+    BattlePhase.command => _battleActionFocusNodes,
+    BattlePhase.choosingMove => [
+      ..._moveFocusNodes,
+      if (_controller.canShowdown) _showdownFocusNode else null,
+    ],
+    BattlePhase.resolving => const [],
+    BattlePhase.gameOver => [_gameOverMenuFocusNode, _rematchFocusNode],
+  };
+
   @override
   void dispose() {
     _controller.dispose();
+    for (final focusNode in [
+      ..._battleActionFocusNodes,
+      ..._moveFocusNodes,
+      _showdownFocusNode,
+      _gameOverMenuFocusNode,
+      _rematchFocusNode,
+    ]) {
+      focusNode.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final compact =
-                    constraints.maxHeight < 560 || constraints.maxWidth < 900;
-                return _BattleRoom(
-                  controller: _controller,
-                  compact: compact,
-                  onExit: () => Navigator.of(context).pop(),
-                );
-              },
-            );
-          },
-        ),
-      ),
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Shortcuts(
+          shortcuts: numberFocusShortcuts(_numberedFocusNodes),
+          child: Focus(
+            autofocus: true,
+            skipTraversal: true,
+            child: FocusTraversalGroup(
+              child: Scaffold(
+                body: SafeArea(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact =
+                          constraints.maxHeight < 560 ||
+                          constraints.maxWidth < 900;
+                      return _BattleRoom(
+                        controller: _controller,
+                        compact: compact,
+                        battleActionFocusNodes: _battleActionFocusNodes,
+                        moveFocusNodes: _moveFocusNodes,
+                        showdownFocusNode: _showdownFocusNode,
+                        gameOverMenuFocusNode: _gameOverMenuFocusNode,
+                        rematchFocusNode: _rematchFocusNode,
+                        onFight: _startFight,
+                        onShowdown: _showdown,
+                        onRematch: _resetBattle,
+                        onExit: () => Navigator.of(context).pop(),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -72,11 +150,27 @@ class _BattleRoom extends StatelessWidget {
   const _BattleRoom({
     required this.controller,
     required this.compact,
+    required this.battleActionFocusNodes,
+    required this.moveFocusNodes,
+    required this.showdownFocusNode,
+    required this.gameOverMenuFocusNode,
+    required this.rematchFocusNode,
+    required this.onFight,
+    required this.onShowdown,
+    required this.onRematch,
     required this.onExit,
   });
 
   final BattleController controller;
   final bool compact;
+  final List<FocusNode> battleActionFocusNodes;
+  final List<FocusNode> moveFocusNodes;
+  final FocusNode showdownFocusNode;
+  final FocusNode gameOverMenuFocusNode;
+  final FocusNode rematchFocusNode;
+  final VoidCallback onFight;
+  final VoidCallback onShowdown;
+  final VoidCallback onRematch;
   final VoidCallback onExit;
 
   @override
@@ -118,7 +212,9 @@ class _BattleRoom extends StatelessWidget {
                 compact: compact,
                 showChampion: !overlayVisible,
                 fightEnabled: controller.phase == BattlePhase.command,
-                onFight: controller.startFight,
+                battleActionFocusNodes: battleActionFocusNodes,
+                canFocusBattleActions: controller.phase == BattlePhase.command,
+                onFight: onFight,
               ),
             ),
           ],
@@ -143,7 +239,13 @@ class _BattleRoom extends StatelessWidget {
             ),
           ),
         ),
-        _MoveSelectionLayer(controller: controller, compact: compact),
+        _MoveSelectionLayer(
+          controller: controller,
+          compact: compact,
+          moveFocusNodes: moveFocusNodes,
+          showdownFocusNode: showdownFocusNode,
+          onShowdown: onShowdown,
+        ),
         if (controller.lastResolution != null)
           _ResultBanner(
             resolution: controller.lastResolution!,
@@ -153,7 +255,9 @@ class _BattleRoom extends StatelessWidget {
           _GameOverPanel(
             player: controller.player,
             opponent: controller.opponent,
-            onRematch: controller.resetBattle,
+            menuFocusNode: gameOverMenuFocusNode,
+            rematchFocusNode: rematchFocusNode,
+            onRematch: onRematch,
             onExit: onExit,
           ),
         Positioned(
@@ -183,7 +287,9 @@ class _ChampionZone extends StatelessWidget {
     required this.showChampion,
     required this.fightEnabled,
     required this.onFight,
-  });
+    this.battleActionFocusNodes,
+    this.canFocusBattleActions = false,
+  }) : assert(isOpponent || battleActionFocusNodes?.length == 4);
 
   final Combatant combatant;
   final bool isOpponent;
@@ -191,6 +297,8 @@ class _ChampionZone extends StatelessWidget {
   final bool showChampion;
   final bool fightEnabled;
   final VoidCallback onFight;
+  final List<FocusNode>? battleActionFocusNodes;
+  final bool canFocusBattleActions;
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +399,8 @@ class _ChampionZone extends StatelessWidget {
                     onFight: onFight,
                     fightEnabled: fightEnabled,
                     compact: compact,
+                    focusNodes: battleActionFocusNodes!,
+                    canFocus: canFocusBattleActions,
                   ),
                 ),
               ),
@@ -344,10 +454,19 @@ class _ReserveStrip extends StatelessWidget {
 }
 
 class _MoveSelectionLayer extends StatelessWidget {
-  const _MoveSelectionLayer({required this.controller, required this.compact});
+  const _MoveSelectionLayer({
+    required this.controller,
+    required this.compact,
+    required this.moveFocusNodes,
+    required this.showdownFocusNode,
+    required this.onShowdown,
+  });
 
   final BattleController controller;
   final bool compact;
+  final List<FocusNode> moveFocusNodes;
+  final FocusNode showdownFocusNode;
+  final VoidCallback onShowdown;
 
   @override
   Widget build(BuildContext context) {
@@ -391,6 +510,7 @@ class _MoveSelectionLayer extends StatelessWidget {
                         enabled: selecting,
                         compact: compact,
                         label: 'Choose your move',
+                        focusNodes: moveFocusNodes,
                       ),
                     ),
                   ),
@@ -413,9 +533,10 @@ class _MoveSelectionLayer extends StatelessWidget {
                     child: controller.canShowdown
                         ? FilledButton.icon(
                             key: const ValueKey('showdown'),
-                            onPressed: controller.showdown,
+                            focusNode: showdownFocusNode,
+                            onPressed: onShowdown,
                             icon: const Icon(Icons.bolt_rounded),
-                            label: const Text('SHOWDOWN'),
+                            label: const Text('4  SHOWDOWN'),
                             style: FilledButton.styleFrom(
                               padding: EdgeInsets.symmetric(
                                 horizontal: compact ? 12 : 22,
@@ -512,12 +633,16 @@ class _GameOverPanel extends StatelessWidget {
   const _GameOverPanel({
     required this.player,
     required this.opponent,
+    required this.menuFocusNode,
+    required this.rematchFocusNode,
     required this.onRematch,
     required this.onExit,
   });
 
   final Combatant player;
   final Combatant opponent;
+  final FocusNode menuFocusNode;
+  final FocusNode rematchFocusNode;
   final VoidCallback onRematch;
   final VoidCallback onExit;
 
@@ -577,11 +702,18 @@ class _GameOverPanel extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  TextButton(onPressed: onExit, child: const Text('MENU')),
+                  TextButton(
+                    key: const ValueKey('game-over-menu'),
+                    focusNode: menuFocusNode,
+                    onPressed: onExit,
+                    child: const Text('1  MENU'),
+                  ),
                   const SizedBox(width: 12),
                   FilledButton(
+                    key: const ValueKey('game-over-rematch'),
+                    focusNode: rematchFocusNode,
                     onPressed: onRematch,
-                    child: const Text('REMATCH'),
+                    child: const Text('2  REMATCH'),
                   ),
                 ],
               ),
