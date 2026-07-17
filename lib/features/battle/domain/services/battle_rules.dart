@@ -43,7 +43,7 @@ class StandardBattleRules implements BattleRules {
       );
     }
 
-    if (_beats(playerGesture, opponentGesture)) {
+    if (playerGesture.beats(opponentGesture)) {
       return BattleResolution(
         outcome: BattleOutcome.playerVictory,
         damageToPlayer: 0,
@@ -56,13 +56,5 @@ class StandardBattleRules implements BattleRules {
       damageToPlayer: opponent.champion.attack,
       damageToOpponent: 0,
     );
-  }
-
-  bool _beats(BattleGesture first, BattleGesture second) {
-    return switch (first) {
-      BattleGesture.rock => second == BattleGesture.scissors,
-      BattleGesture.paper => second == BattleGesture.rock,
-      BattleGesture.scissors => second == BattleGesture.paper,
-    };
   }
 }

@@ -9,16 +9,16 @@ class GestureWheel extends StatelessWidget {
     super.key,
     required this.champion,
     required this.selected,
-    required this.onSelected,
     required this.enabled,
     required this.compact,
     required this.label,
+    this.onSelected,
     this.focusNodes,
   }) : assert(focusNodes == null || focusNodes.length == 3);
 
   final Champion champion;
   final BattleGesture? selected;
-  final ValueChanged<BattleGesture> onSelected;
+  final ValueChanged<BattleGesture>? onSelected;
   final bool enabled;
   final bool compact;
   final String label;
@@ -62,7 +62,9 @@ class GestureWheel extends StatelessWidget {
                   compact: compact,
                   focusNode: focusNodes?[index],
                   shortcutNumber: focusNodes == null ? null : index + 1,
-                  onTap: () => onSelected(BattleGesture.values[index]),
+                  onTap: onSelected == null
+                      ? null
+                      : () => onSelected!(BattleGesture.values[index]),
                 ),
               ),
           ],
@@ -93,7 +95,7 @@ class _GestureChoice extends StatefulWidget {
   final bool compact;
   final FocusNode? focusNode;
   final int? shortcutNumber;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   State<_GestureChoice> createState() => _GestureChoiceState();
@@ -101,6 +103,7 @@ class _GestureChoice extends StatefulWidget {
 
 class _GestureChoiceState extends State<_GestureChoice> {
   bool _focused = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -112,14 +115,20 @@ class _GestureChoiceState extends State<_GestureChoice> {
     final displayLabel = widget.shortcutNumber == null
         ? _labelFor(widget.gesture).toUpperCase()
         : '${widget.shortcutNumber}  ${_labelFor(widget.gesture).toUpperCase()}';
+    final highlighted = _focused || _hovered;
+    final selectable = widget.enabled && widget.onTap != null;
 
     return Semantics(
-      button: widget.enabled,
+      button: selectable,
       selected: widget.selected,
       label:
           '$shortcutPrefix${_labelFor(widget.gesture)}, ${widget.moveName}${widget.critical ? ', critical' : ''}',
       child: MouseRegion(
-        cursor: widget.enabled ? SystemMouseCursors.click : MouseCursor.defer,
+        cursor: selectable
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -127,12 +136,12 @@ class _GestureChoiceState extends State<_GestureChoice> {
                 ? null
                 : ValueKey('battle-move-${widget.gesture.name}'),
             focusNode: widget.focusNode,
-            canRequestFocus: widget.enabled,
+            canRequestFocus: selectable,
             onFocusChange: (focused) => setState(() => _focused = focused),
-            onTap: widget.enabled ? widget.onTap : null,
+            onTap: selectable ? widget.onTap : null,
             borderRadius: BorderRadius.circular(999),
             child: AnimatedScale(
-              scale: widget.selected ? 1.11 : (_focused ? 1.02 : 0.92),
+              scale: widget.selected ? 1.11 : (highlighted ? 1.02 : 0.92),
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutBack,
               child: AnimatedContainer(
@@ -147,12 +156,12 @@ class _GestureChoiceState extends State<_GestureChoice> {
                       : color.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: widget.selected || _focused
+                    color: widget.selected || highlighted
                         ? Colors.white
                         : color.withValues(alpha: 0.72),
-                    width: widget.selected || _focused ? 2.2 : 1.2,
+                    width: widget.selected || highlighted ? 2.2 : 1.2,
                   ),
-                  boxShadow: widget.selected || _focused
+                  boxShadow: widget.selected || highlighted
                       ? [
                           BoxShadow(
                             color: color.withValues(alpha: 0.7),

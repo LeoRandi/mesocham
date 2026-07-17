@@ -1,7 +1,7 @@
 import 'battle_gesture.dart';
 import 'champion_move.dart';
 
-enum MesozoicPeriod { triassic, jurassic, cretaceous }
+enum MesozoicPeriod { triassic, jurassic, cretaceous, chimera }
 
 enum ChampionType { jaw, nest, wings, plates, claws, titan, water, crown }
 

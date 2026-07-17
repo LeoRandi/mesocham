@@ -141,6 +141,7 @@ class ChampionCard extends StatelessWidget {
     MesozoicPeriod.triassic => 'TRIASSIC',
     MesozoicPeriod.jurassic => 'JURASSIC',
     MesozoicPeriod.cretaceous => 'CRETACEOUS',
+    MesozoicPeriod.chimera => 'CHIMERA',
   };
 
   String _typeLabel(ChampionType type) => switch (type) {

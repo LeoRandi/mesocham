@@ -45,7 +45,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       player: DemoBattleFactory.player(),
       opponent: DemoBattleFactory.opponent(),
       rules: const StandardBattleRules(),
-      opponentStrategy: const AlwaysRockAiStrategy(),
+      opponentStrategy: FossilRaceAiStrategy(),
     );
   }
 
@@ -492,8 +492,7 @@ class _MoveSelectionLayer extends StatelessWidget {
                     child: Center(
                       child: GestureWheel(
                         champion: controller.opponent.champion,
-                        selected: controller.opponentGesture,
-                        onSelected: (_) {},
+                        selected: null,
                         enabled: false,
                         compact: compact,
                         label: 'Rival move wheel',

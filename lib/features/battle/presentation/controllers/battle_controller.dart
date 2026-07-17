@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
+import '../../domain/entities/battle_turn.dart';
 import '../../domain/entities/champion_move.dart';
 import '../../domain/entities/combatant.dart';
 import '../../domain/services/ai_move_strategy.dart';
@@ -31,6 +32,7 @@ class BattleController extends ChangeNotifier {
   BattleGesture? _playerGesture;
   BattleGesture? _opponentGesture;
   BattleResolution? _lastResolution;
+  BattleTurn? _previousTurn;
   bool _disposed = false;
   bool _resolving = false;
 
@@ -38,7 +40,6 @@ class BattleController extends ChangeNotifier {
   Combatant get opponent => _opponent;
   BattlePhase get phase => _phase;
   BattleGesture? get playerGesture => _playerGesture;
-  BattleGesture? get opponentGesture => _opponentGesture;
   BattleResolution? get lastResolution => _lastResolution;
   bool get isFightOverlayVisible =>
       _phase == BattlePhase.choosingMove || _phase == BattlePhase.resolving;
@@ -56,6 +57,7 @@ class BattleController extends ChangeNotifier {
     _opponentGesture = _opponentStrategy.chooseMove(
       self: _opponent,
       opponent: _player,
+      previousTurn: _previousTurn,
     );
     _phase = BattlePhase.choosingMove;
     notifyListeners();
@@ -84,6 +86,11 @@ class BattleController extends ChangeNotifier {
       playerGesture: _playerGesture!,
       opponentGesture: _opponentGesture!,
     );
+    _previousTurn = BattleTurn(
+      playerGesture: _playerGesture!,
+      opponentGesture: _opponentGesture!,
+      outcome: resolution.outcome,
+    );
     _lastResolution = resolution;
     _player = _player.takeDamage(resolution.damageToPlayer);
     _opponent = _opponent.takeDamage(resolution.damageToOpponent);
@@ -109,6 +116,7 @@ class BattleController extends ChangeNotifier {
     _playerGesture = null;
     _opponentGesture = null;
     _lastResolution = null;
+    _previousTurn = null;
     _resolving = false;
     notifyListeners();
   }
