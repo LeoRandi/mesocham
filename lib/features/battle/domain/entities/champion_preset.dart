@@ -23,6 +23,8 @@ class ChampionPreset {
     required this.estimatedSizeAndWeight,
     required this.discovery,
     required this.curiosity,
+    this.imageAssetPath,
+    this.closeUpAssetPath,
     this.family,
     this.moveOverrides = const {},
   });
@@ -35,6 +37,8 @@ class ChampionPreset {
   final String estimatedSizeAndWeight;
   final String discovery;
   final String curiosity;
+  final String? imageAssetPath;
+  final String? closeUpAssetPath;
   final String? family;
 
   /// Gesture-specific loadout supplied by the champion row, when present.

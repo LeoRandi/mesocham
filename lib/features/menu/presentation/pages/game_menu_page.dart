@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -189,6 +190,8 @@ class _GameMenuPageState extends State<GameMenuPage> {
                   final compact =
                       constraints.maxHeight < 600 ||
                       constraints.maxWidth < 1050;
+                  final showKeyboardHints =
+                      kIsWeb || defaultTargetPlatform == TargetPlatform.windows;
                   final selectedDestination = _destinations[_selectedIndex];
                   final menuWidth = constraints.maxWidth * 0.53;
                   final descriptionWidth = (constraints.maxWidth * 0.25)
@@ -238,6 +241,7 @@ class _GameMenuPageState extends State<GameMenuPage> {
                                 focusNodes: _focusNodes,
                                 selectedIndex: _selectedIndex,
                                 showBack: _level == _MenuLevel.arena,
+                                showKeyboardHints: showKeyboardHints,
                                 onBack: _closeArena,
                                 onSelected: _selectDestination,
                                 onActivated: _activateDestination,
@@ -265,6 +269,7 @@ class _MenuContent extends StatelessWidget {
     required this.focusNodes,
     required this.selectedIndex,
     required this.showBack,
+    required this.showKeyboardHints,
     required this.onBack,
     required this.onSelected,
     required this.onActivated,
@@ -275,6 +280,7 @@ class _MenuContent extends StatelessWidget {
   final List<FocusNode> focusNodes;
   final int selectedIndex;
   final bool showBack;
+  final bool showKeyboardHints;
   final VoidCallback onBack;
   final ValueChanged<int> onSelected;
   final ValueChanged<int> onActivated;
@@ -295,7 +301,9 @@ class _MenuContent extends StatelessWidget {
                 if (showBack) ...[
                   IconButton(
                     onPressed: onBack,
-                    tooltip: 'Back to main menu (Esc)',
+                    tooltip: showKeyboardHints
+                        ? 'Back to main menu (Esc)'
+                        : 'Back to main menu',
                     icon: const Icon(Icons.arrow_back_rounded),
                   ),
                   const SizedBox(width: 10),
@@ -339,26 +347,27 @@ class _MenuContent extends StatelessWidget {
                 SizedBox(height: compact ? 6 : 9),
             ],
             const Spacer(),
-            Row(
-              children: [
-                const Icon(
-                  Icons.keyboard_alt_outlined,
-                  size: 18,
-                  color: AppColors.teal,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  showBack
-                      ? 'TAB OR 1-3 TO FOCUS  /  ESC TO GO BACK'
-                      : 'TAB OR 1-4 TO FOCUS',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            if (showKeyboardHints)
+              Row(
+                children: [
+                  const Icon(
+                    Icons.keyboard_alt_outlined,
+                    size: 18,
                     color: AppColors.teal,
-                    letterSpacing: 1.4,
-                    fontWeight: FontWeight.w800,
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 8),
+                  Text(
+                    showBack
+                        ? 'TAB OR 1-3 TO FOCUS  /  ESC TO GO BACK'
+                        : 'TAB OR 1-4 TO FOCUS',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.teal,
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),

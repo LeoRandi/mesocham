@@ -99,7 +99,10 @@ class ChampionCard extends StatelessWidget {
                     child: Center(
                       child: AspectRatio(
                         aspectRatio: 1,
-                        child: ChampionEmblem(defeated: defeated),
+                        child: ChampionEmblem(
+                          imageAssetPath: champion.closeUpAssetPath,
+                          defeated: defeated,
+                        ),
                       ),
                     ),
                   ),
@@ -157,8 +160,9 @@ class ChampionCard extends StatelessWidget {
 }
 
 class ChampionEmblem extends StatelessWidget {
-  const ChampionEmblem({super.key, this.defeated = false});
+  const ChampionEmblem({super.key, this.imageAssetPath, this.defeated = false});
 
+  final String? imageAssetPath;
   final bool defeated;
 
   @override
@@ -172,24 +176,32 @@ class ChampionEmblem extends StatelessWidget {
             colorFilter: defeated
                 ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
                 : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-            child: ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: 0,
-                minHeight: 0,
-                maxWidth: double.infinity,
-                maxHeight: double.infinity,
-                child: SizedBox(
-                  width: size * (1448 / 520),
-                  height: size * (2048 / 520),
-                  child: Image.asset(
-                    'assets/images/champion_emblems.png',
-                    fit: BoxFit.fill,
+            child: imageAssetPath == null
+                ? ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: 0,
+                      minHeight: 0,
+                      maxWidth: double.infinity,
+                      maxHeight: double.infinity,
+                      child: SizedBox(
+                        width: size * (1448 / 520),
+                        height: size * (2048 / 520),
+                        child: Image.asset(
+                          'assets/images/champion_emblems.png',
+                          fit: BoxFit.fill,
+                          filterQuality: FilterQuality.medium,
+                        ),
+                      ),
+                    ),
+                  )
+                : Image.asset(
+                    imageAssetPath!,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
                     filterQuality: FilterQuality.medium,
                   ),
-                ),
-              ),
-            ),
           ),
         );
       },
@@ -243,10 +255,7 @@ class MiniChampionCard extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(3),
       child: const Center(
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: ChampionEmblem(),
-        ),
+        child: AspectRatio(aspectRatio: 1, child: ChampionEmblem()),
       ),
     );
   }

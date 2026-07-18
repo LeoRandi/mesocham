@@ -13,6 +13,8 @@ abstract final class ChampionPresets {
       period: MesozoicPeriod.triassic,
       estimatedSizeAndWeight: 'Tamaño: 4 m\nPeso: 200-350 Kg',
       discovery: 'Lossiemouth, Escocia\n1894\nPor Edwin Tully Newton',
+      imageAssetPath: 'assets/dinos/ornitosuchus.png',
+      closeUpAssetPath: 'assets/dinos/closeUps/ornitosuchus-closeUp.png',
       curiosity:
           'Originalmente se creyó que era un ancestro de los dinosaurios carnosaurios, pero hoy en día se sabe que está más relacionado con los cocodrilos.',
     ),

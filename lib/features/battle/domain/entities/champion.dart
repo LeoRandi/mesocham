@@ -14,6 +14,8 @@ class Champion {
     required this.maxHealth,
     required this.attack,
     required this.moves,
+    this.imageAssetPath,
+    this.closeUpAssetPath,
   }) : assert(moves.length == 3, 'Every champion needs exactly three moves.');
 
   final String id;
@@ -22,6 +24,8 @@ class Champion {
   final ChampionType type;
   final int maxHealth;
   final int attack;
+  final String? imageAssetPath;
+  final String? closeUpAssetPath;
   final List<ChampionMove> moves;
 
   ChampionMove moveFor(BattleGesture gesture) {
