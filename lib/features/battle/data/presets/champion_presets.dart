@@ -1,5 +1,7 @@
 import '../../domain/entities/battle_gesture.dart';
+import '../../domain/entities/battle_status.dart';
 import '../../domain/entities/champion.dart';
+import '../../domain/entities/champion_move.dart';
 import '../../domain/entities/champion_preset.dart';
 
 abstract final class ChampionPresets {
@@ -76,13 +78,19 @@ abstract final class ChampionPresets {
       curiosity:
           'Un estudio sugirió que este animal era exclusivamente carroñero, debido a sus desarrollados sentidos del olfato y de la vista. Si bien es probable que a veces robaran las presas de otros cazadores, esta afirmación no duró mucho tiempo.',
       moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(
+        BattleGesture.rock: ChampionMovePreset(name: 'Emboscada'),
+        BattleGesture.paper: ChampionMovePreset(name: 'Rugido de caza'),
+        BattleGesture.scissors: ChampionMovePreset(
           name: 'Mordisco mortal',
           effectDescription: 'Daño + Hueso roto',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.brokenBone,
+              target: StatusTarget.opponent,
+            ),
+          ],
           isCritical: true,
         ),
-        BattleGesture.paper: ChampionMovePreset(name: 'Emboscada'),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Rugido de caza'),
       },
     ),
     ChampionPreset(
@@ -107,14 +115,14 @@ abstract final class ChampionPresets {
       curiosity:
           'Este animal poseía un cráneo pequeño, acompañado de un par de cuernos que le dieron el nombre de "toro carnívoro". Era muy ágil para su enorme tamaño.',
       moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Mandíbula letal'),
+        BattleGesture.rock: ChampionMovePreset(name: 'Emboscada'),
         BattleGesture.paper: ChampionMovePreset(
           name: 'Persecución',
           effectDescription:
               'Daño, + Daño si el rival ha cambiado de campeón este turno',
           isCritical: true,
         ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Rugido de caza'),
+        BattleGesture.scissors: ChampionMovePreset(name: 'Mandíbula letal'),
       },
     ),
     ChampionPreset(
@@ -143,10 +151,11 @@ abstract final class ChampionPresets {
         BattleGesture.rock: ChampionMovePreset(
           name: 'Canibalismo',
           effectDescription: 'Daño + pequeña sanación',
+          effect: MoveEffect.drainHealth,
           isCritical: true,
         ),
-        BattleGesture.paper: ChampionMovePreset(name: 'Emboscada'),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Rugido de caza'),
+        BattleGesture.paper: ChampionMovePreset(name: 'Rugido de caza'),
+        BattleGesture.scissors: ChampionMovePreset(name: 'Mandíbula letal'),
       },
     ),
     ChampionPreset(
@@ -224,6 +233,12 @@ abstract final class ChampionPresets {
         BattleGesture.scissors: ChampionMovePreset(
           name: 'Pulgar afilado',
           effectDescription: 'Daño + Ímpetu de alfa',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.alphaMomentum,
+              target: StatusTarget.self,
+            ),
+          ],
           isCritical: true,
         ),
       },
@@ -265,6 +280,12 @@ abstract final class ChampionPresets {
         BattleGesture.paper: ChampionMovePreset(
           name: 'Ataque sonoro',
           effectDescription: 'Daño + Intimidación',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.intimidation,
+              target: StatusTarget.opponent,
+            ),
+          ],
           isCritical: true,
         ),
         BattleGesture.scissors: ChampionMovePreset(name: 'Puesto de vigía'),
@@ -285,6 +306,7 @@ abstract final class ChampionPresets {
         BattleGesture.rock: ChampionMovePreset(
           name: 'Instinto maternal',
           effectDescription: 'Daño + Sanación',
+          effect: MoveEffect.drainHealth,
           isCritical: true,
         ),
         BattleGesture.paper: ChampionMovePreset(name: 'Embestida'),
@@ -327,6 +349,8 @@ abstract final class ChampionPresets {
         BattleGesture.rock: ChampionMovePreset(name: 'Nueva vida'),
         BattleGesture.paper: ChampionMovePreset(
           name: 'Carrera',
+          effectDescription: 'Daño + Cambio de campeón',
+          effect: MoveEffect.swapSelf,
           isCritical: true,
         ),
         BattleGesture.scissors: ChampionMovePreset(name: 'Puesto de vigía'),
@@ -565,6 +589,7 @@ abstract final class ChampionPresets {
           effectDescription:
               'Daño. Hace el mismo daño cuando gana que cuando empata.',
           isCritical: true,
+          dealsFullDamageOnDraw: true,
         ),
       },
     ),
@@ -583,6 +608,12 @@ abstract final class ChampionPresets {
         BattleGesture.paper: ChampionMovePreset(
           name: 'Rompe muñecas',
           effectDescription: 'Daño + Hueso roto',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.brokenBone,
+              target: StatusTarget.opponent,
+            ),
+          ],
           isCritical: true,
         ),
         BattleGesture.scissors: ChampionMovePreset(name: 'Carga'),
@@ -1164,6 +1195,12 @@ abstract final class ChampionPresets {
         BattleGesture.paper: ChampionMovePreset(
           name: 'Placas de sangre',
           effectDescription: 'Intimidación',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.intimidation,
+              target: StatusTarget.opponent,
+            ),
+          ],
           isCritical: true,
         ),
         BattleGesture.scissors: ChampionMovePreset(name: 'Posición defensiva'),
@@ -1239,6 +1276,12 @@ abstract final class ChampionPresets {
         BattleGesture.rock: ChampionMovePreset(
           name: 'Martillazo',
           effectDescription: 'Daño + Hueso roto',
+          statusApplications: [
+            StatusApplication(
+              type: StatusType.brokenBone,
+              target: StatusTarget.opponent,
+            ),
+          ],
           isCritical: true,
         ),
         BattleGesture.paper: ChampionMovePreset(name: 'Escamas dentadas'),

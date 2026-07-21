@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
+import '../../domain/entities/battle_team.dart';
 import '../../domain/entities/battle_turn.dart';
 import '../../domain/entities/champion_move.dart';
 import '../../domain/entities/combatant.dart';
@@ -10,24 +11,24 @@ import '../../domain/services/battle_rules.dart';
 
 class BattleController extends ChangeNotifier {
   BattleController({
-    required Combatant player,
-    required Combatant opponent,
+    required BattleTeam playerTeam,
+    required BattleTeam opponentTeam,
     required BattleRules rules,
     required AiMoveStrategy opponentStrategy,
-  }) : _initialPlayer = player,
-       _initialOpponent = opponent,
-       _player = player,
-       _opponent = opponent,
+  }) : _initialPlayerTeam = playerTeam,
+       _initialOpponentTeam = opponentTeam,
+       _playerTeam = playerTeam,
+       _opponentTeam = opponentTeam,
        _rules = rules,
        _opponentStrategy = opponentStrategy;
 
-  final Combatant _initialPlayer;
-  final Combatant _initialOpponent;
+  final BattleTeam _initialPlayerTeam;
+  final BattleTeam _initialOpponentTeam;
   final BattleRules _rules;
   final AiMoveStrategy _opponentStrategy;
 
-  Combatant _player;
-  Combatant _opponent;
+  BattleTeam _playerTeam;
+  BattleTeam _opponentTeam;
   BattlePhase _phase = BattlePhase.command;
   BattleGesture? _playerGesture;
   BattleGesture? _opponentGesture;
@@ -36,18 +37,24 @@ class BattleController extends ChangeNotifier {
   bool _disposed = false;
   bool _resolving = false;
 
-  Combatant get player => _player;
-  Combatant get opponent => _opponent;
+  Combatant get player => _playerTeam.active;
+  Combatant get opponent => _opponentTeam.active;
+  BattleTeam get playerTeam => _playerTeam;
+  BattleTeam get opponentTeam => _opponentTeam;
   BattlePhase get phase => _phase;
   BattleGesture? get playerGesture => _playerGesture;
   BattleResolution? get lastResolution => _lastResolution;
+  List<int> get playerSwapIndexes => _playerTeam.swapIndexes;
   bool get isFightOverlayVisible =>
       _phase == BattlePhase.choosingMove || _phase == BattlePhase.resolving;
+  bool get isSwapOverlayVisible => _phase == BattlePhase.swapping;
   bool get canShowdown =>
       _phase == BattlePhase.choosingMove && _playerGesture != null;
+  bool get canSwap =>
+      _phase == BattlePhase.command && playerSwapIndexes.isNotEmpty;
 
   ChampionMove? get selectedPlayerMove =>
-      _playerGesture == null ? null : _player.champion.moveFor(_playerGesture!);
+      _playerGesture == null ? null : player.champion.moveFor(_playerGesture!);
 
   void startFight() {
     if (_phase != BattlePhase.command) return;
@@ -55,11 +62,73 @@ class BattleController extends ChangeNotifier {
     _lastResolution = null;
     _playerGesture = null;
     _opponentGesture = _opponentStrategy.chooseMove(
-      self: _opponent,
-      opponent: _player,
+      self: opponent,
+      opponent: player,
       previousTurn: _previousTurn,
     );
     _phase = BattlePhase.choosingMove;
+    notifyListeners();
+  }
+
+  void startSwap() {
+    if (!canSwap) return;
+
+    _lastResolution = null;
+    _playerGesture = null;
+    _opponentGesture = _opponentStrategy.chooseMove(
+      self: opponent,
+      opponent: player,
+      previousTurn: _previousTurn,
+    );
+    _phase = BattlePhase.swapping;
+    notifyListeners();
+  }
+
+  void cancelSwap() {
+    if (_phase != BattlePhase.swapping) return;
+
+    _opponentGesture = null;
+    _phase = BattlePhase.command;
+    notifyListeners();
+  }
+
+  Future<void> swapPlayerTo(int index) async {
+    if (_phase != BattlePhase.swapping ||
+        !_playerTeam.swapIndexes.contains(index) ||
+        _opponentGesture == null ||
+        _resolving) {
+      return;
+    }
+
+    _resolving = true;
+    _playerTeam = _playerTeam.swapTo(index);
+    _phase = BattlePhase.resolving;
+    notifyListeners();
+
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (_disposed) return;
+
+    final resolution = _rules.resolveGuaranteedOpponentMove(
+      playerTeam: _playerTeam,
+      opponentTeam: _opponentTeam,
+      opponentGesture: _opponentGesture!,
+    );
+    _previousTurn = null;
+    _lastResolution = resolution;
+    _playerTeam = resolution.playerTeam;
+    _opponentTeam = resolution.opponentTeam;
+    notifyListeners();
+
+    await Future<void>.delayed(const Duration(milliseconds: 1250));
+    if (_disposed) return;
+
+    _phase = _playerTeam.isDefeated || _opponentTeam.isDefeated
+        ? BattlePhase.gameOver
+        : BattlePhase.command;
+    _playerGesture = null;
+    _opponentGesture = null;
+    _lastResolution = null;
+    _resolving = false;
     notifyListeners();
   }
 
@@ -81,8 +150,8 @@ class BattleController extends ChangeNotifier {
     if (_disposed) return;
 
     final resolution = _rules.resolve(
-      player: _player,
-      opponent: _opponent,
+      playerTeam: _playerTeam,
+      opponentTeam: _opponentTeam,
       playerGesture: _playerGesture!,
       opponentGesture: _opponentGesture!,
     );
@@ -92,14 +161,14 @@ class BattleController extends ChangeNotifier {
       outcome: resolution.outcome,
     );
     _lastResolution = resolution;
-    _player = _player.takeDamage(resolution.damageToPlayer);
-    _opponent = _opponent.takeDamage(resolution.damageToOpponent);
+    _playerTeam = resolution.playerTeam;
+    _opponentTeam = resolution.opponentTeam;
     notifyListeners();
 
     await Future<void>.delayed(const Duration(milliseconds: 1250));
     if (_disposed) return;
 
-    _phase = _player.isDefeated || _opponent.isDefeated
+    _phase = _playerTeam.isDefeated || _opponentTeam.isDefeated
         ? BattlePhase.gameOver
         : BattlePhase.command;
     _playerGesture = null;
@@ -110,8 +179,8 @@ class BattleController extends ChangeNotifier {
   }
 
   void resetBattle() {
-    _player = _initialPlayer;
-    _opponent = _initialOpponent;
+    _playerTeam = _initialPlayerTeam;
+    _opponentTeam = _initialOpponentTeam;
     _phase = BattlePhase.command;
     _playerGesture = null;
     _opponentGesture = null;

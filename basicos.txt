@@ -1,0 +1,39 @@
+mandíbula: 140 HP
+-piedra : Emboscada - 20 potencia - potencia se añade incluso en el empate
+-papel : Rugido de caza - Gana Ímpetu de Alfa
+-tijera : Mandíbula letal - 50 potencia
+
+nido: 160 HP
+  -piedra : Nueva vida - 20 potencia - Cura al usuario en vez de hacer daño, usando su potencia
+  -papel : Embestida - 30 potencia
+  -tijera : Puesto de vigía - Baja la potencia del enemigo a la mitad durante 3 turnos
+
+Agua: 150 HP
+  -piedra : Aguas profundas - 10 potencia - Hace daño a todo el equipo rival
+  -papel : Banco de peces - 10 potencia - Cura en base a la potencia, a todo el equipo
+  -tijera : Pesca - 30 potencia
+
+Corona: 150 HP
+  -piedra : Escudo corona - Baja la potencia del enemigo a la mitad durante 3 turnos
+  -papel : Pico quebrador - 30 potencia
+  -tijera : Carga - 60 potencia - Recibe daño de vuelta una tercera parte del daño hecho
+
+Alas: 125 HP
+  -piedra : Caída en picado - 30 potencia
+  -papel : Llamada de ayuda - Llama a un compañero durante 3 turnos
+  -tijera : Alzar el vuelo - 20 potencia, cambia a tu campeón por otro de tu equipo.
+
+Titan: 200 HP
+  -piedra : Alcance superior - 20 potencia - Cura al usuario en vez de hacer daño, usando su potencia 
+  -papel : Huella de gigante - 20 potencia - Mete Intimidación al campeón rival
+  -tijera : Látigo titánico - 30 potencia - Hace daño al campeón rival o a un campeón rival en la reserva, elige el jugador.
+
+Garra: 100 HP
+  -piedra : Presión múltiple - 20 potencia - Hace daño a todo el equipo rival
+  -papel : Robo - 20 potencia - Roba un compañero al equipo rival durante 3 turnos
+  -tijera : Garra asesina - 50 potencia - Mete Sangrado al campeón rival
+
+Placas: 175 HP
+  -piedra : Lanza ósea - 30 potencia
+  -papel : Escamas dentadas - Gana el estado Escamas dentadas durante 3 turnos
+  -tijera : Posición defensiva - Baja la potencia del enemigo a la mitad durante 3 turnos

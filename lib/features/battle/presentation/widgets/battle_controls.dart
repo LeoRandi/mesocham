@@ -7,14 +7,18 @@ class BattleControls extends StatelessWidget {
   const BattleControls({
     super.key,
     required this.onFight,
+    required this.onSwap,
     required this.fightEnabled,
+    required this.swapEnabled,
     required this.compact,
     required this.focusNodes,
     required this.canFocus,
   }) : assert(focusNodes.length == 4);
 
   final VoidCallback onFight;
+  final VoidCallback onSwap;
   final bool fightEnabled;
+  final bool swapEnabled;
   final bool compact;
   final List<FocusNode> focusNodes;
   final bool canFocus;
@@ -62,7 +66,8 @@ class BattleControls extends StatelessWidget {
           _BattleAction(
             label: 'SWAP',
             icon: Icons.swap_horiz_rounded,
-            enabled: false,
+            enabled: swapEnabled,
+            onTap: onSwap,
             compact: compact,
             focusNode: focusNodes[3],
             canFocus: canFocus,

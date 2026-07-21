@@ -11,18 +11,22 @@ class HealthBar extends StatelessWidget {
     this.compact = false,
   });
 
-  final int current;
-  final int maximum;
+  final double current;
+  final double maximum;
   final double width;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final target = maximum == 0 ? 0.0 : current / maximum;
+    final target = maximum == 0
+        ? 0.0
+        : (current / maximum).clamp(0.0, 1.0).toDouble();
     final height = compact ? 15.0 : 20.0;
+    final currentLabel = _formatHealth(current);
+    final maximumLabel = _formatHealth(maximum);
 
     return Semantics(
-      label: '$current of $maximum health points',
+      label: '$currentLabel of $maximumLabel health points',
       child: Container(
         width: width,
         height: height,
@@ -57,7 +61,7 @@ class HealthBar extends StatelessWidget {
             ),
             Center(
               child: Text(
-                '$current / $maximum',
+                '$currentLabel / $maximumLabel',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: compact ? 8 : 10,
@@ -70,5 +74,12 @@ class HealthBar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatHealth(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(1);
   }
 }

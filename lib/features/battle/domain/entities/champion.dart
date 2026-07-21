@@ -12,7 +12,6 @@ class Champion {
     required this.period,
     required this.type,
     required this.maxHealth,
-    required this.attack,
     required this.moves,
     this.imageAssetPath,
     this.closeUpAssetPath,
@@ -23,7 +22,6 @@ class Champion {
   final MesozoicPeriod period;
   final ChampionType type;
   final int maxHealth;
-  final int attack;
   final String? imageAssetPath;
   final String? closeUpAssetPath;
   final List<ChampionMove> moves;

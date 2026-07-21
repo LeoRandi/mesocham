@@ -14,6 +14,6 @@ extension BattleGestureRules on BattleGesture {
   };
 }
 
-enum BattlePhase { command, choosingMove, resolving, gameOver }
+enum BattlePhase { command, choosingMove, resolving, swapping, gameOver }
 
 enum BattleOutcome { playerVictory, opponentVictory, draw }

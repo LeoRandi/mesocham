@@ -1,16 +1,28 @@
 import 'battle_gesture.dart';
+import 'battle_status.dart';
 import 'champion.dart';
+import 'champion_move.dart';
 
 class ChampionMovePreset {
   const ChampionMovePreset({
     required this.name,
+    this.potency = 0,
     this.effectDescription,
+    this.effect = MoveEffect.damage,
+    this.statusApplications = const [],
+    this.effectTurns = 0,
     this.isCritical = false,
+    this.dealsFullDamageOnDraw = false,
   });
 
   final String name;
+  final double potency;
   final String? effectDescription;
+  final MoveEffect effect;
+  final List<StatusApplication> statusApplications;
+  final int effectTurns;
   final bool isCritical;
+  final bool dealsFullDamageOnDraw;
 }
 
 class ChampionPreset {

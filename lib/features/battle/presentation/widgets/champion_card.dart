@@ -85,7 +85,7 @@ class ChampionCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'ATK ${champion.attack}',
+                        'HP ${champion.maxHealth}',
                         style: TextStyle(
                           color: AppColors.amber,
                           fontSize: compact ? 6.5 : 8,

@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../data/demo_battle_factory.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
+import '../../domain/entities/battle_status.dart';
 import '../../domain/entities/combatant.dart';
 import '../../domain/services/ai_move_strategy.dart';
 import '../../domain/services/battle_rules.dart';
@@ -34,6 +35,10 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     3,
     (index) => FocusNode(debugLabel: 'Battle move ${index + 1}'),
   );
+  final _swapFocusNodes = List.generate(
+    3,
+    (index) => FocusNode(debugLabel: 'Battle swap ${index + 1}'),
+  );
   final _showdownFocusNode = FocusNode(debugLabel: 'Showdown');
   final _gameOverMenuFocusNode = FocusNode(debugLabel: 'Game over menu');
   final _rematchFocusNode = FocusNode(debugLabel: 'Rematch');
@@ -42,8 +47,8 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   void initState() {
     super.initState();
     _controller = BattleController(
-      player: DemoBattleFactory.player(),
-      opponent: DemoBattleFactory.opponent(),
+      playerTeam: DemoBattleFactory.playerTeam(),
+      opponentTeam: DemoBattleFactory.opponentTeam(),
       rules: const StandardBattleRules(),
       opponentStrategy: FossilRaceAiStrategy(),
     );
@@ -70,6 +75,27 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     _requestFocusAfterFrame(_battleActionFocusNodes.first);
   }
 
+  void _startSwap() {
+    _controller.startSwap();
+    _requestFocusAfterFrame(_swapFocusNodes.first);
+  }
+
+  void _cancelSwap() {
+    _controller.cancelSwap();
+    _requestFocusAfterFrame(_battleActionFocusNodes.first);
+  }
+
+  Future<void> _swapPlayerTo(int index) async {
+    await _controller.swapPlayerTo(index);
+    if (!mounted) return;
+
+    _requestFocusAfterFrame(
+      _controller.phase == BattlePhase.gameOver
+          ? _rematchFocusNode
+          : _battleActionFocusNodes.first,
+    );
+  }
+
   void _requestFocusAfterFrame(FocusNode focusNode) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && focusNode.canRequestFocus) {
@@ -85,6 +111,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       if (_controller.canShowdown) _showdownFocusNode else null,
     ],
     BattlePhase.resolving => const [],
+    BattlePhase.swapping => _swapFocusNodes,
     BattlePhase.gameOver => [_gameOverMenuFocusNode, _rematchFocusNode],
   };
 
@@ -94,6 +121,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     for (final focusNode in [
       ..._battleActionFocusNodes,
       ..._moveFocusNodes,
+      ..._swapFocusNodes,
       _showdownFocusNode,
       _gameOverMenuFocusNode,
       _rematchFocusNode,
@@ -126,10 +154,14 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                         compact: compact,
                         battleActionFocusNodes: _battleActionFocusNodes,
                         moveFocusNodes: _moveFocusNodes,
+                        swapFocusNodes: _swapFocusNodes,
                         showdownFocusNode: _showdownFocusNode,
                         gameOverMenuFocusNode: _gameOverMenuFocusNode,
                         rematchFocusNode: _rematchFocusNode,
                         onFight: _startFight,
+                        onSwap: _startSwap,
+                        onCancelSwap: _cancelSwap,
+                        onSelectSwapTarget: _swapPlayerTo,
                         onShowdown: _showdown,
                         onRematch: _resetBattle,
                         onExit: () => Navigator.of(context).pop(),
@@ -152,10 +184,14 @@ class _BattleRoom extends StatelessWidget {
     required this.compact,
     required this.battleActionFocusNodes,
     required this.moveFocusNodes,
+    required this.swapFocusNodes,
     required this.showdownFocusNode,
     required this.gameOverMenuFocusNode,
     required this.rematchFocusNode,
     required this.onFight,
+    required this.onSwap,
+    required this.onCancelSwap,
+    required this.onSelectSwapTarget,
     required this.onShowdown,
     required this.onRematch,
     required this.onExit,
@@ -165,10 +201,14 @@ class _BattleRoom extends StatelessWidget {
   final bool compact;
   final List<FocusNode> battleActionFocusNodes;
   final List<FocusNode> moveFocusNodes;
+  final List<FocusNode> swapFocusNodes;
   final FocusNode showdownFocusNode;
   final FocusNode gameOverMenuFocusNode;
   final FocusNode rematchFocusNode;
   final VoidCallback onFight;
+  final VoidCallback onSwap;
+  final VoidCallback onCancelSwap;
+  final ValueChanged<int> onSelectSwapTarget;
   final VoidCallback onShowdown;
   final VoidCallback onRematch;
   final VoidCallback onExit;
@@ -186,11 +226,14 @@ class _BattleRoom extends StatelessWidget {
             Expanded(
               child: _ChampionZone(
                 combatant: controller.opponent,
+                reserveCardCount: controller.opponentTeam.swapIndexes.length,
                 isOpponent: true,
                 compact: compact,
                 showChampion: !overlayVisible,
                 fightEnabled: false,
+                swapEnabled: false,
                 onFight: () {},
+                onSwap: () {},
               ),
             ),
             Container(
@@ -208,13 +251,16 @@ class _BattleRoom extends StatelessWidget {
             Expanded(
               child: _ChampionZone(
                 combatant: controller.player,
+                reserveCardCount: controller.playerSwapIndexes.length,
                 isOpponent: false,
                 compact: compact,
                 showChampion: !overlayVisible,
                 fightEnabled: controller.phase == BattlePhase.command,
+                swapEnabled: controller.canSwap,
                 battleActionFocusNodes: battleActionFocusNodes,
                 canFocusBattleActions: controller.phase == BattlePhase.command,
                 onFight: onFight,
+                onSwap: onSwap,
               ),
             ),
           ],
@@ -245,6 +291,13 @@ class _BattleRoom extends StatelessWidget {
           moveFocusNodes: moveFocusNodes,
           showdownFocusNode: showdownFocusNode,
           onShowdown: onShowdown,
+        ),
+        _SwapSelectionLayer(
+          controller: controller,
+          compact: compact,
+          focusNodes: swapFocusNodes,
+          onCancel: onCancelSwap,
+          onSelected: onSelectSwapTarget,
         ),
         if (controller.lastResolution != null)
           _ResultBanner(
@@ -282,21 +335,27 @@ class _BattleRoom extends StatelessWidget {
 class _ChampionZone extends StatelessWidget {
   const _ChampionZone({
     required this.combatant,
+    required this.reserveCardCount,
     required this.isOpponent,
     required this.compact,
     required this.showChampion,
     required this.fightEnabled,
+    required this.swapEnabled,
     required this.onFight,
+    required this.onSwap,
     this.battleActionFocusNodes,
     this.canFocusBattleActions = false,
   }) : assert(isOpponent || battleActionFocusNodes?.length == 4);
 
   final Combatant combatant;
+  final int reserveCardCount;
   final bool isOpponent;
   final bool compact;
   final bool showChampion;
   final bool fightEnabled;
+  final bool swapEnabled;
   final VoidCallback onFight;
+  final VoidCallback onSwap;
   final List<FocusNode>? battleActionFocusNodes;
   final bool canFocusBattleActions;
 
@@ -336,7 +395,7 @@ class _ChampionZone extends StatelessWidget {
                 child: _ReserveStrip(
                   label: isOpponent ? 'DEFEATED' : 'RESERVE',
                   compact: compact,
-                  cardCount: isOpponent ? 2 : 3,
+                  cardCount: reserveCardCount,
                 ),
               ),
             Padding(
@@ -376,10 +435,12 @@ class _ChampionZone extends StatelessWidget {
                         SizedBox(height: compact ? 3 : 6),
                         HealthBar(
                           current: combatant.currentHealth,
-                          maximum: combatant.champion.maxHealth,
+                          maximum: combatant.maxHealth,
                           width: cardHeight * 0.88,
                           compact: compact,
                         ),
+                        SizedBox(height: compact ? 2 : 4),
+                        _StatusStrip(combatant: combatant, compact: compact),
                       ],
                     ),
                   ),
@@ -397,7 +458,9 @@ class _ChampionZone extends StatelessWidget {
                   ),
                   child: BattleControls(
                     onFight: onFight,
+                    onSwap: onSwap,
                     fightEnabled: fightEnabled,
+                    swapEnabled: swapEnabled,
                     compact: compact,
                     focusNodes: battleActionFocusNodes!,
                     canFocus: canFocusBattleActions,
@@ -560,6 +623,231 @@ class _MoveSelectionLayer extends StatelessWidget {
   }
 }
 
+class _SwapSelectionLayer extends StatelessWidget {
+  const _SwapSelectionLayer({
+    required this.controller,
+    required this.compact,
+    required this.focusNodes,
+    required this.onCancel,
+    required this.onSelected,
+  }) : assert(focusNodes.length == 3);
+
+  final BattleController controller;
+  final bool compact;
+  final List<FocusNode> focusNodes;
+  final VoidCallback onCancel;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = controller.isSwapOverlayVisible;
+    final swapIndexes = controller.playerSwapIndexes;
+
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.58),
+          child: Center(
+            child: Container(
+              width: compact ? 430 : 560,
+              margin: const EdgeInsets.all(20),
+              padding: EdgeInsets.fromLTRB(
+                compact ? 16 : 22,
+                compact ? 14 : 20,
+                compact ? 16 : 22,
+                compact ? 16 : 22,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.charcoal,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.teal, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.teal.withValues(alpha: 0.32),
+                    blurRadius: 24,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'SWAP CHAMPION',
+                    style: TextStyle(
+                      color: AppColors.teal,
+                      fontSize: compact ? 12 : 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  SizedBox(height: compact ? 12 : 18),
+                  Row(
+                    children: [
+                      for (var index = 0; index < swapIndexes.length; index++)
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              left: index == 0 ? 0 : 8,
+                              right: index == swapIndexes.length - 1 ? 0 : 8,
+                            ),
+                            child: _SwapTargetButton(
+                              combatant: controller
+                                  .playerTeam
+                                  .combatants[swapIndexes[index]],
+                              shortcutNumber: index + 1,
+                              compact: compact,
+                              focusNode: focusNodes[index],
+                              onPressed: () => onSelected(swapIndexes[index]),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  SizedBox(height: compact ? 12 : 16),
+                  TextButton.icon(
+                    focusNode: focusNodes[2],
+                    onPressed: onCancel,
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('3  CANCEL'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SwapTargetButton extends StatelessWidget {
+  const _SwapTargetButton({
+    required this.combatant,
+    required this.shortcutNumber,
+    required this.compact,
+    required this.focusNode,
+    required this.onPressed,
+  });
+
+  final Combatant combatant;
+  final int shortcutNumber;
+  final bool compact;
+  final FocusNode focusNode;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$shortcutNumber, swap to ${combatant.champion.name}',
+      child: Material(
+        color: AppColors.ink.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          focusNode: focusNode,
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: EdgeInsets.all(compact ? 8 : 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$shortcutNumber',
+                  style: TextStyle(
+                    color: AppColors.amber,
+                    fontSize: compact ? 13 : 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: compact ? 6 : 8),
+                ChampionCard(
+                  champion: combatant.champion,
+                  height: compact ? 86 : 116,
+                  defeated: combatant.isDefeated,
+                ),
+                SizedBox(height: compact ? 7 : 10),
+                HealthBar(
+                  current: combatant.currentHealth,
+                  maximum: combatant.maxHealth,
+                  width: compact ? 92 : 124,
+                  compact: true,
+                ),
+                SizedBox(height: compact ? 5 : 7),
+                _StatusStrip(combatant: combatant, compact: true),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({required this.combatant, required this.compact});
+
+  final Combatant combatant;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    if (combatant.statuses.isEmpty) {
+      return SizedBox(height: compact ? 10 : 14);
+    }
+
+    return SizedBox(
+      height: compact ? 12 : 16,
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: compact ? 3 : 5,
+        runSpacing: 2,
+        children: [
+          for (final status in combatant.statuses)
+            Tooltip(
+              message: status.type.label,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 4 : 5,
+                  vertical: 1,
+                ),
+                decoration: BoxDecoration(
+                  color: _statusColor(status.type).withValues(alpha: 0.24),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: _statusColor(status.type)),
+                ),
+                child: Text(
+                  status.stacks > 1
+                      ? '${status.type.shortLabel}x${status.stacks}'
+                      : status.type.shortLabel,
+                  style: TextStyle(
+                    color: AppColors.bone,
+                    fontSize: compact ? 6.5 : 8,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(StatusType type) => switch (type) {
+    StatusType.intimidation => AppColors.amber,
+    StatusType.bleeding => AppColors.danger,
+    StatusType.brokenBone => const Color(0xFFECE0CC),
+    StatusType.alphaMomentum => AppColors.teal,
+    StatusType.protectiveScales => const Color(0xFF82B0FF),
+    StatusType.famine => const Color(0xFFA36B34),
+    StatusType.jaggedScales => const Color(0xFFC7D16B),
+  };
+}
+
 class _ResultBanner extends StatelessWidget {
   const _ResultBanner({required this.resolution, required this.compact});
 
@@ -572,17 +860,28 @@ class _ResultBanner extends StatelessWidget {
       BattleOutcome.playerVictory => (
         'DIRECT HIT',
         AppColors.teal,
-        '${resolution.damageToOpponent} DAMAGE',
+        _effectDetail(
+          damage: resolution.damageToOpponent,
+          healing: resolution.healingToPlayer,
+          reserveDamage: resolution.reserveDamageToOpponent,
+          swapped: resolution.playerSwapped,
+        ),
       ),
       BattleOutcome.opponentVictory => (
         'RIVAL STRIKES',
         AppColors.danger,
-        '${resolution.damageToPlayer} DAMAGE',
+        _effectDetail(
+          damage: resolution.damageToPlayer,
+          healing: resolution.healingToOpponent,
+          reserveDamage: resolution.reserveDamageToPlayer,
+          swapped: resolution.opponentSwapped,
+        ),
       ),
       BattleOutcome.draw => (
         'DRAW',
         AppColors.amber,
-        '${resolution.damageToPlayer} / ${resolution.damageToOpponent} DAMAGE',
+        '${_formatAmount(resolution.damageToPlayer)} / '
+            '${_formatAmount(resolution.damageToOpponent)} DAMAGE',
       ),
     };
 
@@ -625,6 +924,27 @@ class _ResultBanner extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _effectDetail({
+    required double damage,
+    required double healing,
+    required double reserveDamage,
+    required bool swapped,
+  }) {
+    final parts = <String>[];
+    if (damage > 0) parts.add('${_formatAmount(damage)} DAMAGE');
+    if (reserveDamage > 0) parts.add('${_formatAmount(reserveDamage)} RESERVE');
+    if (healing > 0) parts.add('${_formatAmount(healing)} HEAL');
+    if (swapped) parts.add('SWAP');
+    return parts.isEmpty ? 'NO DAMAGE' : parts.join(' · ');
+  }
+
+  String _formatAmount(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(1);
   }
 }
 
