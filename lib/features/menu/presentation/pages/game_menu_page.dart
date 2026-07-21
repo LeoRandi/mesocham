@@ -109,6 +109,7 @@ class _GameMenuPageState extends State<GameMenuPage> {
   );
   var _level = _MenuLevel.main;
   var _selectedIndex = 0;
+  var _launchingFossilRace = false;
 
   List<_MenuDestination> get _destinations => switch (_level) {
     _MenuLevel.main => _menuDestinations,
@@ -131,10 +132,18 @@ class _GameMenuPageState extends State<GameMenuPage> {
       case (_MenuLevel.main, 0):
         _openArena();
       case (_MenuLevel.arena, 0):
-        Navigator.of(context).pushNamed('/battle');
+        _startFossilRace();
       default:
         break;
     }
+  }
+
+  Future<void> _startFossilRace() async {
+    if (_launchingFossilRace) return;
+    _launchingFossilRace = true;
+
+    await Navigator.of(context).pushNamed('/loading', arguments: '/battle');
+    _launchingFossilRace = false;
   }
 
   void _openArena() {
