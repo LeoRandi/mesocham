@@ -16,7 +16,6 @@ import '../widgets/battle_backdrop.dart';
 import '../widgets/battle_controls.dart';
 import '../widgets/champion_card.dart';
 import '../widgets/gesture_wheel.dart';
-import '../widgets/health_bar.dart';
 
 class BattleRoomPage extends StatefulWidget {
   const BattleRoomPage({super.key});
@@ -430,14 +429,9 @@ class _ChampionZone extends StatelessWidget {
                         ChampionCard(
                           champion: combatant.champion,
                           height: cardHeight,
+                          currentHealth: combatant.currentHealth,
+                          maximumHealth: combatant.maxHealth,
                           defeated: combatant.isDefeated,
-                        ),
-                        SizedBox(height: compact ? 3 : 6),
-                        HealthBar(
-                          current: combatant.currentHealth,
-                          maximum: combatant.maxHealth,
-                          width: cardHeight * 0.88,
-                          compact: compact,
                         ),
                         SizedBox(height: compact ? 2 : 4),
                         _StatusStrip(combatant: combatant, compact: compact),
@@ -768,14 +762,9 @@ class _SwapTargetButton extends StatelessWidget {
                 ChampionCard(
                   champion: combatant.champion,
                   height: compact ? 86 : 116,
+                  currentHealth: combatant.currentHealth,
+                  maximumHealth: combatant.maxHealth,
                   defeated: combatant.isDefeated,
-                ),
-                SizedBox(height: compact ? 7 : 10),
-                HealthBar(
-                  current: combatant.currentHealth,
-                  maximum: combatant.maxHealth,
-                  width: compact ? 92 : 124,
-                  compact: true,
                 ),
                 SizedBox(height: compact ? 5 : 7),
                 _StatusStrip(combatant: combatant, compact: true),

@@ -201,14 +201,14 @@ abstract final class ChampionTypeMovePresets {
 
 abstract final class ChampionTypeHealthPresets {
   static const Map<ChampionType, int> byType = {
-    ChampionType.jaw: 140,
-    ChampionType.nest: 160,
-    ChampionType.water: 150,
-    ChampionType.crown: 150,
-    ChampionType.wings: 125,
-    ChampionType.titan: 200,
-    ChampionType.claws: 100,
-    ChampionType.plates: 175,
+    ChampionType.jaw: 190,
+    ChampionType.nest: 210,
+    ChampionType.water: 200,
+    ChampionType.crown: 200,
+    ChampionType.wings: 175,
+    ChampionType.titan: 250,
+    ChampionType.claws: 150,
+    ChampionType.plates: 225,
   };
 
   static int forType(ChampionType type) => byType[type]!;
