@@ -10,6 +10,7 @@ import '../../../champions/domain/entities/battle_gesture.dart';
 import '../../../champions/domain/entities/champion.dart';
 import '../../../champions/domain/entities/champion_definition.dart';
 import '../../../champions/domain/entities/champion_move.dart';
+import '../../../champions/presentation/widgets/battle_gesture_icon.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
 import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 
@@ -698,11 +699,18 @@ class _MoveTab extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(
-                obscured ? Icons.lock_rounded : _gestureIcon(move.gesture),
-                color: selected ? accent : AppColors.deepEarth,
-                size: compact ? 18 : 24,
-              ),
+              if (obscured)
+                Icon(
+                  Icons.lock_rounded,
+                  color: selected ? accent : AppColors.deepEarth,
+                  size: compact ? 18 : 24,
+                )
+              else
+                BattleGestureIcon(
+                  gesture: move.gesture,
+                  critical: move.isCritical,
+                  size: compact ? 26 : 34,
+                ),
               SizedBox(height: compact ? 3 : 5),
               Text(
                 obscured ? '???' : _gestureLabel(move.gesture),
@@ -1001,12 +1009,6 @@ String _gestureLabel(BattleGesture gesture) => switch (gesture) {
   BattleGesture.rock => 'ROCK',
   BattleGesture.paper => 'PAPER',
   BattleGesture.scissors => 'SCISSORS',
-};
-
-IconData _gestureIcon(BattleGesture gesture) => switch (gesture) {
-  BattleGesture.rock => Icons.landscape_rounded,
-  BattleGesture.paper => Icons.description_rounded,
-  BattleGesture.scissors => Icons.content_cut_rounded,
 };
 
 Color _gestureColor(BattleGesture gesture) => switch (gesture) {

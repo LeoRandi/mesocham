@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/presentation/widgets/battle_gesture_icon.dart';
 import '../../domain/entities/battle_gesture.dart';
 
 class GestureWheel extends StatelessWidget {
@@ -108,7 +109,7 @@ class _GestureChoiceState extends State<_GestureChoice> {
   @override
   Widget build(BuildContext context) {
     final color = _colorFor(widget.gesture);
-    final iconSize = widget.compact ? 22.0 : 33.0;
+    final iconSize = widget.compact ? 28.0 : 40.0;
     final shortcutPrefix = widget.shortcutNumber == null
         ? ''
         : '${widget.shortcutNumber}, ';
@@ -174,10 +175,10 @@ class _GestureChoiceState extends State<_GestureChoice> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      _iconFor(widget.gesture),
+                    BattleGestureIcon(
+                      gesture: widget.gesture,
+                      critical: widget.critical,
                       size: iconSize,
-                      color: widget.selected ? AppColors.ink : color,
                     ),
                     SizedBox(width: widget.compact ? 4 : 7),
                     Flexible(
@@ -228,12 +229,6 @@ class _GestureChoiceState extends State<_GestureChoice> {
     BattleGesture.rock => AppColors.rock,
     BattleGesture.paper => AppColors.paper,
     BattleGesture.scissors => AppColors.scissors,
-  };
-
-  IconData _iconFor(BattleGesture gesture) => switch (gesture) {
-    BattleGesture.rock => Icons.sports_mma_rounded,
-    BattleGesture.paper => Icons.front_hand_rounded,
-    BattleGesture.scissors => Icons.content_cut_rounded,
   };
 
   String _labelFor(BattleGesture gesture) => switch (gesture) {
