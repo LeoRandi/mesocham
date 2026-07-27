@@ -10,9 +10,27 @@ class ChampionTypeEmblem extends StatelessWidget {
     this.shadows = const [],
   });
 
-  static const _sourceWidth = 1448.0;
-  static const _sourceHeight = 2048.0;
-  static const _cropExtent = 482.0;
+  static const assetPaths = [
+    'assets/images/jaws.png',
+    'assets/images/nest.png',
+    'assets/images/wings.png',
+    'assets/images/plates.png',
+    'assets/images/claws.png',
+    'assets/images/titan.png',
+    'assets/images/water.png',
+    'assets/images/crown.png',
+  ];
+
+  static String assetPathFor(ChampionType type) => switch (type) {
+    ChampionType.jaw => 'assets/images/jaws.png',
+    ChampionType.nest => 'assets/images/nest.png',
+    ChampionType.wings => 'assets/images/wings.png',
+    ChampionType.plates => 'assets/images/plates.png',
+    ChampionType.claws => 'assets/images/claws.png',
+    ChampionType.titan => 'assets/images/titan.png',
+    ChampionType.water => 'assets/images/water.png',
+    ChampionType.crown => 'assets/images/crown.png',
+  };
 
   final ChampionType type;
   final double size;
@@ -20,41 +38,18 @@ class ChampionTypeEmblem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (cropLeft, cropTop) = switch (type) {
-      ChampionType.jaw => (81.5, 49.0),
-      ChampionType.nest => (872.5, 49.0),
-      ChampionType.water => (81.5, 553.5),
-      ChampionType.wings => (872.5, 553.5),
-      ChampionType.crown => (81.5, 1051.5),
-      ChampionType.titan => (872.5, 1051.5),
-      ChampionType.claws => (81.5, 1538.5),
-      ChampionType.plates => (872.5, 1538.5),
-    };
-    final scale = size / _cropExtent;
-
     return DecoratedBox(
       decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: shadows),
       child: ClipOval(
         child: SizedBox.square(
           dimension: size,
-          child: OverflowBox(
-            alignment: Alignment.topLeft,
-            minWidth: 0,
-            minHeight: 0,
-            maxWidth: double.infinity,
-            maxHeight: double.infinity,
-            child: Transform.translate(
-              offset: Offset(-cropLeft * scale, -cropTop * scale),
-              child: SizedBox(
-                width: _sourceWidth * scale,
-                height: _sourceHeight * scale,
-                child: Image.asset(
-                  'assets/images/champion_emblems.png',
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.high,
-                ),
-              ),
-            ),
+          child: Image.asset(
+            assetPathFor(type),
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            cacheWidth: 256,
+            filterQuality: FilterQuality.medium,
           ),
         ),
       ),

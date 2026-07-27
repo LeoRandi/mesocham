@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/battle/presentation/pages/battle_room_page.dart';
+import '../features/collection/presentation/pages/collection_page.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/loading/presentation/pages/game_loading_page.dart';
 import '../features/menu/presentation/pages/game_menu_page.dart';
@@ -28,15 +29,21 @@ class MesozoicChampionsApp extends StatelessWidget {
       '/menu' => const GameMenuPage(),
       '/loading' => GameLoadingPage(
         destinationRoute: loadingDestination,
-        retainedRouteName: loadingDestination == '/battle' ? '/menu' : null,
+        retainedRouteName:
+            loadingDestination == '/battle' ||
+                loadingDestination == '/collection'
+            ? '/menu'
+            : null,
       ),
       '/battle' => const BattleRoomPage(),
+      '/collection' => const CollectionPage(),
       _ => const HomePage(),
     };
     final usesHorizontalTransition =
         settings.name == '/menu' ||
         settings.name == '/loading' ||
-        settings.name == '/battle';
+        settings.name == '/battle' ||
+        settings.name == '/collection';
 
     return PageRouteBuilder<void>(
       settings: settings,

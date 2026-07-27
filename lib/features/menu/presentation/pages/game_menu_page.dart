@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../battle/data/presets/champion_presets.dart';
+import '../../../home/data/player_preferences.dart';
 import '../widgets/menu_backdrop.dart';
 
 const _menuDestinations = [
@@ -38,7 +40,7 @@ const _menuDestinations = [
     sections: 'COLLECTION  /  DECKS  /  BLACK MARKET',
     icon: Icons.museum_rounded,
     accent: AppColors.sand,
-    enabled: false,
+    enabled: true,
   ),
   _MenuDestination(
     id: 'missions',
@@ -110,6 +112,9 @@ class _GameMenuPageState extends State<GameMenuPage> {
   var _level = _MenuLevel.main;
   var _selectedIndex = 0;
   var _launchingFossilRace = false;
+  var _launchingCollection = false;
+  var _grantingDebugCollection = false;
+  final _playerPreferences = PlayerPreferences();
 
   List<_MenuDestination> get _destinations => switch (_level) {
     _MenuLevel.main => _menuDestinations,
@@ -131,6 +136,8 @@ class _GameMenuPageState extends State<GameMenuPage> {
     switch ((_level, index)) {
       case (_MenuLevel.main, 0):
         _openArena();
+      case (_MenuLevel.main, 2):
+        _openCollection();
       case (_MenuLevel.arena, 0):
         _startFossilRace();
       default:
@@ -144,6 +151,49 @@ class _GameMenuPageState extends State<GameMenuPage> {
 
     await Navigator.of(context).pushNamed('/loading', arguments: '/battle');
     _launchingFossilRace = false;
+  }
+
+  Future<void> _openCollection() async {
+    if (_launchingCollection) return;
+    _launchingCollection = true;
+
+    await Navigator.of(context).pushNamed('/loading', arguments: '/collection');
+    _launchingCollection = false;
+  }
+
+  Future<void> _grantDebugCollection() async {
+    if (_grantingDebugCollection) return;
+    setState(() => _grantingDebugCollection = true);
+
+    try {
+      await _playerPreferences.saveChampionCollectionCounts({
+        for (final champion in ChampionPresets.all) champion.id: 3,
+      });
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Debug collection granted: x3 of every champion.'),
+            backgroundColor: AppColors.deepEarth,
+          ),
+        );
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Could not grant the debug collection.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _grantingDebugCollection = false);
+      }
+    }
   }
 
   void _openArena() {
@@ -259,6 +309,18 @@ class _GameMenuPageState extends State<GameMenuPage> {
                           ),
                         ),
                       ),
+                      if (_level == _MenuLevel.main)
+                        Positioned(
+                          top:
+                              MediaQuery.paddingOf(context).top +
+                              (compact ? 12 : 24),
+                          right: compact ? 16 : 34,
+                          child: _DebugGrantButton(
+                            compact: compact,
+                            granting: _grantingDebugCollection,
+                            onPressed: _grantDebugCollection,
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -266,6 +328,60 @@ class _GameMenuPageState extends State<GameMenuPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DebugGrantButton extends StatelessWidget {
+  const _DebugGrantButton({
+    required this.compact,
+    required this.granting,
+    required this.onPressed,
+  });
+
+  final bool compact;
+  final bool granting;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Debug only: set every champion count to three',
+      child: FilledButton.icon(
+        onPressed: granting ? null : onPressed,
+        style: FilledButton.styleFrom(
+          foregroundColor: AppColors.bone,
+          backgroundColor: AppColors.deepEarth.withValues(alpha: 0.92),
+          disabledBackgroundColor: AppColors.deepEarth.withValues(alpha: 0.62),
+          side: BorderSide(
+            color: AppColors.amber.withValues(alpha: 0.8),
+            width: 1.3,
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 16,
+            vertical: compact ? 9 : 12,
+          ),
+          textStyle: TextStyle(
+            fontSize: compact ? 9 : 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.8,
+          ),
+        ),
+        icon: granting
+            ? SizedBox.square(
+                dimension: compact ? 14 : 17,
+                child: const CircularProgressIndicator(
+                  color: AppColors.amber,
+                  strokeWidth: 2,
+                ),
+              )
+            : Icon(
+                Icons.science_rounded,
+                color: AppColors.amber,
+                size: compact ? 17 : 20,
+              ),
+        label: Text(granting ? 'GRANTING...' : 'DEBUG · GRANT ALL x3'),
       ),
     );
   }

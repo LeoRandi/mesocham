@@ -1,7 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_colors.dart';
+import '../../../battle/data/champion_artwork_assets.dart';
+import '../../../battle/data/presets/champion_presets.dart';
 import '../../../battle/domain/entities/champion.dart';
 import '../../../battle/presentation/widgets/champion_type_emblem.dart';
 
@@ -10,14 +11,14 @@ class GameLoadingPage extends StatefulWidget {
     super.key,
     required this.destinationRoute,
     this.retainedRouteName,
-    this.waitDuration = const Duration(seconds: 2),
+    this.minimumWaitDuration = const Duration(milliseconds: 500),
   });
 
-  // This is the app's go-to loading screen. Route future loading flows through
-  // this class so they share the same black transition and blinking game logo.
+  // Route future loading flows through this screen so navigation only
+  // continues after the destination's image assets have decoded successfully.
   final String destinationRoute;
   final String? retainedRouteName;
-  final Duration waitDuration;
+  final Duration minimumWaitDuration;
 
   @override
   State<GameLoadingPage> createState() => _GameLoadingPageState();
@@ -35,16 +36,45 @@ class _GameLoadingPageState extends State<GameLoadingPage>
   );
 
   Animation<double>? _routeAnimation;
-  Timer? _navigationTimer;
+  Object? _loadError;
+  var _loadInProgress = false;
+  var _loadAttempt = 0;
+
+  List<_DestinationImage> get _destinationImages {
+    final typeEmblems = [
+      for (final assetPath in ChampionTypeEmblem.assetPaths)
+        _DestinationImage(assetPath, cacheWidth: 256),
+    ];
+
+    return switch (widget.destinationRoute) {
+      '/collection' => [
+        ...typeEmblems,
+        for (final preset in ChampionPresets.all)
+          _DestinationImage(
+            ChampionArtworkAssets.collectionImageFor(preset.id),
+            cacheWidth: 256,
+          ),
+      ],
+      '/battle' => [
+        ...typeEmblems,
+        const _DestinationImage('assets/images/champion_emblems.png'),
+        const _DestinationImage('assets/dinos/ornitosuchus.png'),
+        const _DestinationImage(
+          'assets/dinos/closeUps/ornitosuchus-closeUp.png',
+        ),
+      ],
+      _ => typeEmblems,
+    };
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_routeAnimation != null || _navigationTimer != null) return;
+    if (_routeAnimation != null || _loadInProgress || _loadAttempt > 0) return;
 
     _routeAnimation = ModalRoute.of(context)?.animation;
     if (_routeAnimation == null || _routeAnimation!.isCompleted) {
-      _startNavigationTimer();
+      _startLoading();
     } else {
       _routeAnimation!.addStatusListener(_handleRouteStatus);
     }
@@ -54,27 +84,86 @@ class _GameLoadingPageState extends State<GameLoadingPage>
     if (status != AnimationStatus.completed) return;
 
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
-    _startNavigationTimer();
+    _startLoading();
   }
 
-  void _startNavigationTimer() {
-    if (_navigationTimer != null) return;
+  void _startLoading() {
+    if (_loadInProgress) return;
 
-    _navigationTimer = Timer(widget.waitDuration, () {
-      if (!mounted) return;
+    setState(() {
+      _loadInProgress = true;
+      _loadError = null;
+    });
+    final attempt = ++_loadAttempt;
+    _loadAssetsAndNavigate(attempt);
+  }
+
+  Future<void> _loadAssetsAndNavigate(int attempt) async {
+    final minimumWait = Future<void>.delayed(widget.minimumWaitDuration);
+
+    try {
+      await Future.wait([minimumWait, _precacheDestinationImages()]);
+      if (!mounted || attempt != _loadAttempt) return;
+
       Navigator.of(context).pushNamedAndRemoveUntil(
         widget.destinationRoute,
         (route) =>
             widget.retainedRouteName != null &&
             route.settings.name == widget.retainedRouteName,
       );
-    });
+    } on Object catch (error) {
+      await minimumWait;
+      if (!mounted || attempt != _loadAttempt) return;
+
+      setState(() {
+        _loadInProgress = false;
+        _loadError = error;
+      });
+    }
+  }
+
+  Future<void> _precacheDestinationImages() async {
+    final images = _destinationImages;
+    const batchSize = 8;
+
+    for (var start = 0; start < images.length; start += batchSize) {
+      if (!mounted) return;
+      final end = (start + batchSize).clamp(0, images.length);
+      await Future.wait([
+        for (var index = start; index < end; index++)
+          _precacheImage(images[index]),
+      ]);
+    }
+  }
+
+  Future<void> _precacheImage(_DestinationImage image) async {
+    final assetProvider = AssetImage(image.assetPath);
+    final provider = image.cacheWidth == null
+        ? assetProvider
+        : ResizeImage.resizeIfNeeded(image.cacheWidth, null, assetProvider);
+    Object? loadError;
+    StackTrace? loadStackTrace;
+
+    await precacheImage(
+      provider,
+      context,
+      onError: (error, stackTrace) {
+        loadError = error;
+        loadStackTrace = stackTrace;
+      },
+    );
+
+    if (loadError != null) {
+      Error.throwWithStackTrace(
+        StateError('Could not load ${image.assetPath}: $loadError'),
+        loadStackTrace ?? StackTrace.current,
+      );
+    }
   }
 
   @override
   void dispose() {
     _routeAnimation?.removeStatusListener(_handleRouteStatus);
-    _navigationTimer?.cancel();
     _logoController.dispose();
     super.dispose();
   }
@@ -86,7 +175,9 @@ class _GameLoadingPageState extends State<GameLoadingPage>
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Semantics(
-          label: 'Loading Mesozoic Champions',
+          label: _loadError == null
+              ? 'Loading Mesozoic Champions'
+              : 'Mesozoic Champions asset loading failed',
           child: SafeArea(
             minimum: const EdgeInsets.all(20),
             child: LayoutBuilder(
@@ -95,21 +186,33 @@ class _GameLoadingPageState extends State<GameLoadingPage>
                     .clamp(54.0, 92.0)
                     .toDouble();
 
-                return Align(
-                  alignment: Alignment.bottomRight,
-                  child: FadeTransition(
-                    opacity: _logoOpacity,
-                    child: ChampionTypeEmblem(
-                      type: ChampionType.jaw,
-                      size: logoSize,
-                      shadows: [
-                        BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.16),
-                          blurRadius: logoSize * 0.16,
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_loadError != null)
+                      Center(
+                        child: _LoadingErrorCard(
+                          error: _loadError!,
+                          onRetry: _startLoading,
                         ),
-                      ],
+                      ),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: FadeTransition(
+                        opacity: _logoOpacity,
+                        child: ChampionTypeEmblem(
+                          type: ChampionType.jaw,
+                          size: logoSize,
+                          shadows: [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              blurRadius: logoSize * 0.16,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 );
               },
             ),
@@ -118,4 +221,68 @@ class _GameLoadingPageState extends State<GameLoadingPage>
       ),
     );
   }
+}
+
+class _LoadingErrorCard extends StatelessWidget {
+  const _LoadingErrorCard({required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 430,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: AppColors.deepEarth,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.danger, width: 1.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.broken_image_rounded,
+            color: AppColors.danger,
+            size: 38,
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'ASSETS COULD NOT BE PREPARED',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.bone,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error.toString(),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.sand.withValues(alpha: 0.7),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 15),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('RETRY'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DestinationImage {
+  const _DestinationImage(this.assetPath, {this.cacheWidth});
+
+  final String assetPath;
+  final int? cacheWidth;
 }
