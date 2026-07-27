@@ -66,6 +66,8 @@ extension StatusTypeLabel on StatusType {
     StatusType.protectiveScales => 'Escamas protectoras',
     StatusType.famine => 'Hambruna',
     StatusType.jaggedScales => 'Escamas dentadas',
+    StatusType.secondaryImmunity => 'Inmunidad secundaria',
+    StatusType.swapLocked => 'Cambio bloqueado',
   };
 
   String get shortLabel => switch (this) {
@@ -76,5 +78,7 @@ extension StatusTypeLabel on StatusType {
     StatusType.protectiveScales => 'PRO',
     StatusType.famine => 'HAM',
     StatusType.jaggedScales => 'DEN',
+    StatusType.secondaryImmunity => 'INM',
+    StatusType.swapLocked => 'BLQ',
   };
 }

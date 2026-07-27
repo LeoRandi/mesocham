@@ -4,6 +4,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/entities/champion.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_type_emblem.dart';
+import '../../../species_cards/domain/entities/species_card.dart';
+import '../../../species_cards/presentation/species_card_assets.dart';
 
 class GameLoadingPage extends StatefulWidget {
   const GameLoadingPage({
@@ -52,6 +54,9 @@ class _GameLoadingPageState extends State<GameLoadingPage>
         ...typeEmblems,
         if (widget.destinationRoute == '/battle')
           const _DestinationImage('assets/images/champion_emblems.png'),
+        if (widget.destinationRoute == '/battle')
+          for (final card in SpeciesCard.values)
+            _DestinationImage(card.assetPath, cacheWidth: 512),
         for (final champion in widget.catalog.champions) ...[
           _DestinationImage(champion.imageAssetPath, cacheWidth: 256),
           if (champion.closeUpAssetPath != null)

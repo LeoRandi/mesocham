@@ -1,4 +1,5 @@
 import '../../../champions/domain/entities/champion.dart';
+import '../../../species_cards/domain/entities/species_card.dart';
 import 'battle_status.dart';
 
 class Combatant {
@@ -7,6 +8,7 @@ class Combatant {
     required this.currentHealth,
     this.maxHealthPenalty = 0,
     List<StatusCondition> statuses = const [],
+    this.equippedSpeciesCard,
   }) : statuses = List.unmodifiable(statuses);
 
   factory Combatant.fresh(Champion champion) {
@@ -20,6 +22,7 @@ class Combatant {
   final double currentHealth;
   final double maxHealthPenalty;
   final List<StatusCondition> statuses;
+  final SpeciesCard? equippedSpeciesCard;
 
   bool get isDefeated => currentHealth <= 0;
   double get maxHealth => (champion.maxHealth - maxHealthPenalty)
@@ -27,11 +30,18 @@ class Combatant {
       .toDouble();
 
   Combatant takeDamage(double damage) {
+    final mitigatedDamage =
+        damage * (equippedSpeciesCard == SpeciesCard.armoredBeast ? 0.67 : 1);
+    final nextHealth = (currentHealth - mitigatedDamage)
+        .clamp(0, maxHealth)
+        .toDouble();
+
     return Combatant(
       champion: champion,
-      currentHealth: (currentHealth - damage).clamp(0, maxHealth).toDouble(),
+      currentHealth: nextHealth,
       maxHealthPenalty: maxHealthPenalty,
       statuses: statuses,
+      equippedSpeciesCard: nextHealth <= 0 ? null : equippedSpeciesCard,
     );
   }
 
@@ -41,6 +51,7 @@ class Combatant {
       currentHealth: (currentHealth + amount).clamp(0, maxHealth).toDouble(),
       maxHealthPenalty: maxHealthPenalty,
       statuses: statuses,
+      equippedSpeciesCard: equippedSpeciesCard,
     );
   }
 
@@ -57,10 +68,15 @@ class Combatant {
       currentHealth: currentHealth.clamp(0, nextMaxHealth).toDouble(),
       maxHealthPenalty: nextPenalty,
       statuses: statuses,
+      equippedSpeciesCard: equippedSpeciesCard,
     );
   }
 
   Combatant applyStatus(StatusApplication application) {
+    if (application.type.isHarmful && hasStatus(StatusType.secondaryImmunity)) {
+      return this;
+    }
+
     final nextStatuses = [...statuses];
     final existingIndex = nextStatuses.indexWhere(
       (status) => status.type == application.type,
@@ -85,6 +101,7 @@ class Combatant {
       currentHealth: currentHealth,
       maxHealthPenalty: maxHealthPenalty,
       statuses: nextStatuses,
+      equippedSpeciesCard: equippedSpeciesCard,
     );
   }
 
@@ -97,6 +114,7 @@ class Combatant {
         for (final status in statuses)
           if (status.type != type) status,
       ],
+      equippedSpeciesCard: equippedSpeciesCard,
     );
   }
 
@@ -105,6 +123,34 @@ class Combatant {
       champion: champion,
       currentHealth: currentHealth,
       maxHealthPenalty: maxHealthPenalty,
+      equippedSpeciesCard: equippedSpeciesCard,
+    );
+  }
+
+  Combatant clearHarmfulStatuses() {
+    return Combatant(
+      champion: champion,
+      currentHealth: currentHealth,
+      maxHealthPenalty: maxHealthPenalty,
+      statuses: [
+        for (final status in statuses)
+          if (!status.type.isHarmful) status,
+      ],
+      equippedSpeciesCard: equippedSpeciesCard,
+    );
+  }
+
+  Combatant equipSpeciesCard(SpeciesCard card) {
+    if (isDefeated || equippedSpeciesCard != null) {
+      return this;
+    }
+
+    return Combatant(
+      champion: champion,
+      currentHealth: currentHealth,
+      maxHealthPenalty: maxHealthPenalty,
+      statuses: statuses,
+      equippedSpeciesCard: card,
     );
   }
 
@@ -140,6 +186,7 @@ class Combatant {
       currentHealth: nextCombatant.currentHealth,
       maxHealthPenalty: nextCombatant.maxHealthPenalty,
       statuses: nextStatuses,
+      equippedSpeciesCard: nextCombatant.equippedSpeciesCard,
     );
   }
 

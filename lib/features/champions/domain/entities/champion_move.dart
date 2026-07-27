@@ -9,6 +9,8 @@ enum MoveEffect {
   healTeam,
   damageTeam,
   damageReserve,
+  damageReserveAndPromote,
+  forceOpponentSwap,
   swapSelf,
   recklessDamage,
 }
@@ -24,6 +26,10 @@ class ChampionMove {
     this.effectTurns = 0,
     this.isCritical = false,
     this.dealsFullDamageOnDraw = false,
+    this.selfHealing = 0,
+    this.selfDamage = 0,
+    this.bonusPotencyIfTargetSwapped = 0,
+    this.cleansesHarmfulStatuses = false,
   }) : statusApplications = List.unmodifiable(statusApplications);
 
   final String name;
@@ -35,4 +41,8 @@ class ChampionMove {
   final int effectTurns;
   final bool isCritical;
   final bool dealsFullDamageOnDraw;
+  final double selfHealing;
+  final double selfDamage;
+  final double bonusPotencyIfTargetSwapped;
+  final bool cleansesHarmfulStatuses;
 }

@@ -35,6 +35,8 @@ class BattleController extends ChangeNotifier {
   BattlePhase get phase => _state.phase;
   BattleGesture? get playerGesture => _state.playerGesture;
   BattleResolution? get lastResolution => _state.lastResolution;
+  int? get pendingPlayerSpeciesCardIndex =>
+      _state.pendingPlayerSpeciesCardIndex;
   int get resolutionSequence => _state.resolutionSequence;
   List<int> get playerSwapIndexes => _state.playerSwapIndexes;
   bool get isFightOverlayVisible => _state.isFightOverlayVisible;
@@ -51,6 +53,10 @@ class BattleController extends ChangeNotifier {
 
   void selectPlayerGesture(BattleGesture gesture) {
     _emit(_session.selectPlayerGesture(_state, gesture));
+  }
+
+  void selectPlayerSpeciesCard(int index) {
+    _emit(_session.selectPlayerSpeciesCard(_state, index));
   }
 
   bool beginShowdown() => _emit(_session.beginShowdown(_state));

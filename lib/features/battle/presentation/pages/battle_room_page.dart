@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
 import '../../../home/data/player_preferences.dart';
+import '../../../species_cards/presentation/widgets/species_card_widgets.dart';
 import '../../application/services/battle_session.dart';
 import '../../application/services/fossil_race_team_factory.dart';
 import '../../domain/entities/battle_gesture.dart';
@@ -92,6 +93,10 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   void _startFight() {
     _controller?.startFight();
     _requestFocusAfterFrame(_moveFocusNodes.first);
+  }
+
+  void _selectSpeciesCard(int index) {
+    _controller?.selectPlayerSpeciesCard(index);
   }
 
   Future<void> _showdown() async {
@@ -233,6 +238,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                         gameOverMenuFocusNode: _gameOverMenuFocusNode,
                         rematchFocusNode: _rematchFocusNode,
                         onFight: _startFight,
+                        onSelectSpeciesCard: _selectSpeciesCard,
                         onSwap: _startSwap,
                         onCancelSwap: _cancelSwap,
                         onSelectSwapTarget: _swapPlayerTo,
@@ -300,6 +306,7 @@ class _BattleRoom extends StatelessWidget {
     required this.gameOverMenuFocusNode,
     required this.rematchFocusNode,
     required this.onFight,
+    required this.onSelectSpeciesCard,
     required this.onSwap,
     required this.onCancelSwap,
     required this.onSelectSwapTarget,
@@ -317,6 +324,7 @@ class _BattleRoom extends StatelessWidget {
   final FocusNode gameOverMenuFocusNode;
   final FocusNode rematchFocusNode;
   final VoidCallback onFight;
+  final ValueChanged<int> onSelectSpeciesCard;
   final VoidCallback onSwap;
   final VoidCallback onCancelSwap;
   final ValueChanged<int> onSelectSwapTarget;
@@ -345,7 +353,9 @@ class _BattleRoom extends StatelessWidget {
                 showChampion: !overlayVisible,
                 fightEnabled: false,
                 swapEnabled: false,
+                speciesCardSelectionEnabled: false,
                 onFight: () {},
+                onSelectSpeciesCard: (_) {},
                 onSwap: () {},
               ),
             ),
@@ -371,9 +381,14 @@ class _BattleRoom extends StatelessWidget {
                 showChampion: !overlayVisible,
                 fightEnabled: controller.phase == BattlePhase.command,
                 swapEnabled: controller.canSwap,
+                selectedSpeciesCardIndex:
+                    controller.pendingPlayerSpeciesCardIndex,
+                speciesCardSelectionEnabled:
+                    controller.phase == BattlePhase.command,
                 battleActionFocusNodes: battleActionFocusNodes,
                 canFocusBattleActions: controller.phase == BattlePhase.command,
                 onFight: onFight,
+                onSelectSpeciesCard: onSelectSpeciesCard,
                 onSwap: onSwap,
               ),
             ),
@@ -456,8 +471,11 @@ class _ChampionZone extends StatelessWidget {
     required this.showChampion,
     required this.fightEnabled,
     required this.swapEnabled,
+    required this.speciesCardSelectionEnabled,
     required this.onFight,
+    required this.onSelectSpeciesCard,
     required this.onSwap,
+    this.selectedSpeciesCardIndex,
     this.battleActionFocusNodes,
     this.canFocusBattleActions = false,
   }) : assert(isOpponent || battleActionFocusNodes?.length == 4);
@@ -470,8 +488,11 @@ class _ChampionZone extends StatelessWidget {
   final bool showChampion;
   final bool fightEnabled;
   final bool swapEnabled;
+  final bool speciesCardSelectionEnabled;
   final VoidCallback onFight;
+  final ValueChanged<int> onSelectSpeciesCard;
   final VoidCallback onSwap;
+  final int? selectedSpeciesCardIndex;
   final List<FocusNode>? battleActionFocusNodes;
   final bool canFocusBattleActions;
 
@@ -527,12 +548,13 @@ class _ChampionZone extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: _TeamCardGroup(
-                          label: 'SPECIES CARDS',
+                        child: _SpeciesCardGroup(
+                          team: team,
                           compact: compact,
-                          cardHeight: miniCardHeight,
                           cardGap: cardGap,
-                          cardCount: 3,
+                          selectedIndex: selectedSpeciesCardIndex,
+                          selectionEnabled: speciesCardSelectionEnabled,
+                          onSelected: onSelectSpeciesCard,
                         ),
                       ),
                       Expanded(
@@ -562,13 +584,18 @@ class _ChampionZone extends StatelessWidget {
                                   ),
                                 ),
                                 SizedBox(height: compact ? 3 : 6),
-                                ChampionCard(
-                                  champion: combatant.champion,
-                                  height: cardHeight,
-                                  currentHealth: combatant.currentHealth,
-                                  maximumHealth: combatant.maxHealth,
-                                  defeated: combatant.isDefeated,
-                                  damageTrigger: activeDamageTrigger,
+                                SpeciesCardBearer(
+                                  bearerHeight: cardHeight,
+                                  card: combatant.equippedSpeciesCard,
+                                  effectActive: true,
+                                  child: ChampionCard(
+                                    champion: combatant.champion,
+                                    height: cardHeight,
+                                    currentHealth: combatant.currentHealth,
+                                    maximumHealth: combatant.maxHealth,
+                                    defeated: combatant.isDefeated,
+                                    damageTrigger: activeDamageTrigger,
+                                  ),
                                 ),
                                 SizedBox(height: compact ? 2 : 4),
                                 _StatusStrip(
@@ -581,8 +608,7 @@ class _ChampionZone extends StatelessWidget {
                         ),
                       ),
                       Expanded(
-                        child: _TeamCardGroup(
-                          label: 'RESERVE',
+                        child: _ReserveCardGroup(
                           compact: compact,
                           cardHeight: miniCardHeight,
                           cardGap: cardGap,
@@ -623,89 +649,123 @@ class _ChampionZone extends StatelessWidget {
   }
 }
 
-class _TeamCardGroup extends StatelessWidget {
-  const _TeamCardGroup({
-    required this.label,
+class _SpeciesCardGroup extends StatelessWidget {
+  const _SpeciesCardGroup({
+    required this.team,
+    required this.compact,
+    required this.cardGap,
+    required this.selectedIndex,
+    required this.selectionEnabled,
+    required this.onSelected,
+  });
+
+  final BattleTeam team;
+  final bool compact;
+  final double cardGap;
+  final int? selectedIndex;
+  final bool selectionEnabled;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _GroupLabel(label: 'SPECIES CARDS', compact: compact),
+        SizedBox(height: compact ? 4 : 8),
+        Row(
+          children: [
+            for (var index = 0; index < team.speciesCardSlots.length; index++)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(left: index == 0 ? 0 : cardGap),
+                  child: AspectRatio(
+                    aspectRatio: 1.5,
+                    child: SpeciesCardTile(
+                      key: ValueKey('species-card-$index'),
+                      card: team.speciesCardSlots[index].card,
+                      selected: selectedIndex == index,
+                      equipped: team.speciesCardSlots[index].consumed,
+                      enabled:
+                          selectionEnabled &&
+                          !team.speciesCardSlots[index].consumed &&
+                          team.active.equippedSpeciesCard == null &&
+                          !team.active.isDefeated,
+                      onPressed: () => onSelected(index),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ReserveCardGroup extends StatelessWidget {
+  const _ReserveCardGroup({
     required this.compact,
     required this.cardHeight,
     required this.cardGap,
-    this.cardCount = 0,
-    this.team,
+    required this.team,
     this.resolutionSequence = 0,
     this.damagedIndexes = const [],
   });
 
-  final String label;
   final bool compact;
   final double cardHeight;
   final double cardGap;
-  final int cardCount;
-  final BattleTeam? team;
+  final BattleTeam team;
   final int resolutionSequence;
   final List<int> damagedIndexes;
 
   @override
   Widget build(BuildContext context) {
-    final reserveIndexes = team == null
-        ? const <int>[]
-        : [
-            for (var index = 0; index < team!.combatants.length; index++)
-              if (index != team!.activeIndex) index,
-          ];
+    final reserveIndexes = [
+      for (var index = 0; index < team.combatants.length; index++)
+        if (index != team.activeIndex) index,
+    ];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.bone.withValues(alpha: 0.86),
-            fontSize: compact ? 7.5 : 10,
-            fontWeight: FontWeight.w900,
-            letterSpacing: compact ? 0.65 : 0.95,
-            shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
-          ),
-        ),
+        _GroupLabel(label: 'RESERVE', compact: compact),
         SizedBox(height: compact ? 4 : 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (team == null)
-              for (var index = 0; index < cardCount; index++)
-                Padding(
-                  padding: EdgeInsets.only(left: index == 0 ? 0 : cardGap),
-                  child: MiniChampionCard(size: cardHeight),
-                )
-            else
-              for (
-                var position = 0;
-                position < reserveIndexes.length;
-                position++
-              )
-                Padding(
-                  padding: EdgeInsets.only(left: position == 0 ? 0 : cardGap),
+            for (var position = 0; position < reserveIndexes.length; position++)
+              Padding(
+                padding: EdgeInsets.only(left: position == 0 ? 0 : cardGap),
+                child: SpeciesCardBearer(
+                  bearerHeight: cardHeight,
+                  card: team
+                      .combatants[reserveIndexes[position]]
+                      .equippedSpeciesCard,
+                  effectActive: false,
+                  mini: true,
                   child: MiniChampionCard.combatant(
                     key: ValueKey(
-                      '${team!.activeIndex}-${reserveIndexes[position]}',
+                      '${team.activeIndex}-${reserveIndexes[position]}',
                     ),
                     size: cardHeight,
                     imageAssetPath:
-                        team!
+                        team
                             .combatants[reserveIndexes[position]]
                             .champion
                             .closeUpAssetPath ??
-                        team!
+                        team
                             .combatants[reserveIndexes[position]]
                             .champion
                             .imageAssetPath,
-                    currentHealth: team!
-                        .combatants[reserveIndexes[position]]
-                        .currentHealth,
+                    currentHealth:
+                        team.combatants[reserveIndexes[position]].currentHealth,
                     maximumHealth:
-                        team!.combatants[reserveIndexes[position]].maxHealth,
+                        team.combatants[reserveIndexes[position]].maxHealth,
                     defeated:
-                        team!.combatants[reserveIndexes[position]].isDefeated,
+                        team.combatants[reserveIndexes[position]].isDefeated,
                     obscured: false,
                     damageTrigger:
                         damagedIndexes.contains(reserveIndexes[position])
@@ -713,9 +773,31 @@ class _TeamCardGroup extends StatelessWidget {
                         : 0,
                   ),
                 ),
+              ),
           ],
         ),
       ],
+    );
+  }
+}
+
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel({required this.label, required this.compact});
+
+  final String label;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: TextStyle(
+        color: AppColors.bone.withValues(alpha: 0.86),
+        fontSize: compact ? 7.5 : 10,
+        fontWeight: FontWeight.w900,
+        letterSpacing: compact ? 0.65 : 0.95,
+        shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
+      ),
     );
   }
 }
@@ -1044,6 +1126,8 @@ class _StatusStrip extends StatelessWidget {
     StatusType.protectiveScales => const Color(0xFF82B0FF),
     StatusType.famine => const Color(0xFFA36B34),
     StatusType.jaggedScales => const Color(0xFFC7D16B),
+    StatusType.secondaryImmunity => AppColors.teal,
+    StatusType.swapLocked => AppColors.danger,
   };
 }
 

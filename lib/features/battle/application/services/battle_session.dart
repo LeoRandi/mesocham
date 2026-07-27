@@ -40,6 +40,7 @@ class BattleSession {
       phase: BattlePhase.swapping,
       clearLastResolution: true,
       clearPlayerGesture: true,
+      clearPendingPlayerSpeciesCard: true,
       opponentGesture: _chooseOpponentMove(state),
     );
   }
@@ -56,6 +57,14 @@ class BattleSession {
   BattleState selectPlayerGesture(BattleState state, BattleGesture gesture) {
     if (state.phase != BattlePhase.choosingMove) return state;
     return state.copyWith(playerGesture: gesture);
+  }
+
+  BattleState selectPlayerSpeciesCard(BattleState state, int index) {
+    if (!state.canSelectPlayerSpeciesCard(index)) return state;
+    if (state.pendingPlayerSpeciesCardIndex == index) {
+      return state.copyWith(clearPendingPlayerSpeciesCard: true);
+    }
+    return state.copyWith(pendingPlayerSpeciesCardIndex: index);
   }
 
   BattleState beginShowdown(BattleState state) {
@@ -108,6 +117,7 @@ class BattleSession {
       clearOpponentGesture: true,
       clearLastResolution: true,
       clearPendingAction: true,
+      clearPendingPlayerSpeciesCard: true,
     );
   }
 
@@ -120,12 +130,21 @@ class BattleSession {
   }
 
   BattleState _resolveShowdown(BattleState state) {
-    final resolution = _rules.resolve(
+    var resolution = _rules.resolve(
       playerTeam: state.playerTeam,
       opponentTeam: state.opponentTeam,
       playerGesture: state.playerGesture!,
       opponentGesture: state.opponentGesture!,
     );
+    final selectedCardIndex = state.pendingPlayerSpeciesCardIndex;
+    if (resolution.outcome == BattleOutcome.playerVictory &&
+        selectedCardIndex != null) {
+      final equippedPlayerTeam = resolution.playerTeam.equipSpeciesCard(
+        cardSlotIndex: selectedCardIndex,
+        bearerIndex: state.playerTeam.activeIndex,
+      );
+      resolution = resolution.copyWith(playerTeam: equippedPlayerTeam);
+    }
 
     return state.copyWith(
       playerTeam: resolution.playerTeam,
@@ -136,6 +155,7 @@ class BattleSession {
         opponentGesture: state.opponentGesture!,
         outcome: resolution.outcome,
       ),
+      clearPendingPlayerSpeciesCard: true,
       resolutionSequence: state.resolutionSequence + 1,
     );
   }

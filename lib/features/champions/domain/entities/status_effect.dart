@@ -6,6 +6,8 @@ enum StatusType {
   protectiveScales,
   famine,
   jaggedScales,
+  secondaryImmunity,
+  swapLocked,
 }
 
 enum StatusTarget { self, opponent }
@@ -30,6 +32,19 @@ extension StatusTypeRules on StatusType {
   int? get defaultDurationTurns => switch (this) {
     StatusType.alphaMomentum => null,
     StatusType.bleeding => 5,
+    StatusType.swapLocked => 1,
     _ => 3,
+  };
+
+  bool get isHarmful => switch (this) {
+    StatusType.intimidation ||
+    StatusType.bleeding ||
+    StatusType.brokenBone ||
+    StatusType.famine ||
+    StatusType.swapLocked => true,
+    StatusType.alphaMomentum ||
+    StatusType.protectiveScales ||
+    StatusType.jaggedScales ||
+    StatusType.secondaryImmunity => false,
   };
 }

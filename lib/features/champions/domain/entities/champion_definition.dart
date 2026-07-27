@@ -1,4 +1,3 @@
-import 'battle_gesture.dart';
 import 'champion.dart';
 import 'champion_move.dart';
 import 'status_effect.dart';
@@ -13,6 +12,10 @@ class ChampionMoveDefinition {
     this.effectTurns = 0,
     this.isCritical = false,
     this.dealsFullDamageOnDraw = false,
+    this.selfHealing = 0,
+    this.selfDamage = 0,
+    this.bonusPotencyIfTargetSwapped = 0,
+    this.cleansesHarmfulStatuses = false,
   });
 
   final String name;
@@ -23,6 +26,10 @@ class ChampionMoveDefinition {
   final int effectTurns;
   final bool isCritical;
   final bool dealsFullDamageOnDraw;
+  final double selfHealing;
+  final double selfDamage;
+  final double bonusPotencyIfTargetSwapped;
+  final bool cleansesHarmfulStatuses;
 }
 
 class ChampionDefinition {
@@ -38,7 +45,6 @@ class ChampionDefinition {
     this.imageAssetPath,
     this.closeUpAssetPath,
     this.family,
-    this.moveOverrides = const {},
   });
 
   final String id;
@@ -52,9 +58,6 @@ class ChampionDefinition {
   final String? imageAssetPath;
   final String? closeUpAssetPath;
   final String? family;
-
-  /// Gesture-specific loadout supplied by the champion row, when present.
-  final Map<BattleGesture, ChampionMoveDefinition> moveOverrides;
 }
 
 typedef ChampionMovePreset = ChampionMoveDefinition;

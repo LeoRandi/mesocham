@@ -1,8 +1,5 @@
-import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/champion.dart';
 import '../../domain/entities/champion_definition.dart';
-import '../../domain/entities/champion_move.dart';
-import '../../domain/entities/status_effect.dart';
 
 abstract final class ChampionDefinitions {
   static const List<ChampionPreset> all = [
@@ -77,21 +74,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Colorado, Estados Unidos\n1874\nPor Arthur Lakes',
       curiosity:
           'Un estudio sugirió que este animal era exclusivamente carroñero, debido a sus desarrollados sentidos del olfato y de la vista. Si bien es probable que a veces robaran las presas de otros cazadores, esta afirmación no duró mucho tiempo.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Emboscada'),
-        BattleGesture.paper: ChampionMovePreset(name: 'Rugido de caza'),
-        BattleGesture.scissors: ChampionMovePreset(
-          name: 'Mordisco mortal',
-          effectDescription: 'Daño + Hueso roto',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.brokenBone,
-              target: StatusTarget.opponent,
-            ),
-          ],
-          isCritical: true,
-        ),
-      },
     ),
     ChampionPreset(
       id: 'giganotosaurus',
@@ -114,16 +96,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Patagonia argentina\n1985\nPor José Fernando Bonaparte',
       curiosity:
           'Este animal poseía un cráneo pequeño, acompañado de un par de cuernos que le dieron el nombre de "toro carnívoro". Era muy ágil para su enorme tamaño.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Emboscada'),
-        BattleGesture.paper: ChampionMovePreset(
-          name: 'Persecución',
-          effectDescription:
-              'Daño, + Daño si el rival ha cambiado de campeón este turno',
-          isCritical: true,
-        ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Mandíbula letal'),
-      },
     ),
     ChampionPreset(
       id: 'albertosaurus',
@@ -147,16 +119,6 @@ abstract final class ChampionDefinitions {
           'Río Betsiboka, Madagascar\n1896\nPor Charles Jean Julien Depéret',
       curiosity:
           'Es el único dinosaurio del que existe evidencia directa de canibalismo. Fue el carvívoro más grande de Madagascar.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(
-          name: 'Canibalismo',
-          effectDescription: 'Daño + pequeña sanación',
-          effect: MoveEffect.drainHealth,
-          isCritical: true,
-        ),
-        BattleGesture.paper: ChampionMovePreset(name: 'Rugido de caza'),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Mandíbula letal'),
-      },
     ),
     ChampionPreset(
       id: 'carcharadontosaurus',
@@ -227,21 +189,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Bernissart, Bélgica\n1881\nPor George Albert Boulenger',
       curiosity:
           'En la película "Dinosaurio" de Disney (2000) el protagonista es un Iguanodon llamado Aladar. Su diseño presenta algunas inconsistencias, como tener labios en vez de pico.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Nueva vida'),
-        BattleGesture.paper: ChampionMovePreset(name: 'Embestida'),
-        BattleGesture.scissors: ChampionMovePreset(
-          name: 'Pulgar afilado',
-          effectDescription: 'Daño + Ímpetu de alfa',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.alphaMomentum,
-              target: StatusTarget.self,
-            ),
-          ],
-          isCritical: true,
-        ),
-      },
     ),
     ChampionPreset(
       id: 'dryosaurus',
@@ -275,21 +222,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Alberta, Canadá\n1922\nPor William Parks',
       curiosity:
           'Se cree que su cresta craneal servía como método de comunicación entre los de su especie y para regular la temperatura corporal.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Nueva vida'),
-        BattleGesture.paper: ChampionMovePreset(
-          name: 'Ataque sonoro',
-          effectDescription: 'Daño + Intimidación',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.intimidation,
-              target: StatusTarget.opponent,
-            ),
-          ],
-          isCritical: true,
-        ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Puesto de vigía'),
-      },
     ),
     ChampionPreset(
       id: 'maiasaura',
@@ -302,16 +234,6 @@ abstract final class ChampionDefinitions {
           'Montana, Estados Unidos\n1979\nPor Laurie Trexler\nDescrito por Jack Horner y \nRobert Makela',
       curiosity:
           'Su nombre significa "lagarto buena madre" en griego. Se le llamó así debido a la cantidad de nidos encontrados junto a sus restos en lo que hoy se conoce como la Montaña de los Huevos (EEUU).',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(
-          name: 'Instinto maternal',
-          effectDescription: 'Daño + Sanación',
-          effect: MoveEffect.drainHealth,
-          isCritical: true,
-        ),
-        BattleGesture.paper: ChampionMovePreset(name: 'Embestida'),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Puesto de vigía'),
-      },
     ),
     ChampionPreset(
       id: 'therizinosaurus',
@@ -324,15 +246,6 @@ abstract final class ChampionDefinitions {
           'Desierto de Gobi, Mongolia\n1948\nDescrito por Evgeny Maleev en 1954',
       curiosity:
           'Este animal pertenece a la familia de los terópodos, compuesta principalmente por carnívoros. Sin embargo, el Therizinosaurus fue herbívoro y usaba sus garras para defenderse en vez de para cazar.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Nueva vida'),
-        BattleGesture.paper: ChampionMovePreset(name: 'Embestida'),
-        BattleGesture.scissors: ChampionMovePreset(
-          name: 'Cuchillada',
-          effectDescription: 'Mucho daño',
-          isCritical: true,
-        ),
-      },
     ),
     ChampionPreset(
       id: 'gallimimus',
@@ -345,16 +258,6 @@ abstract final class ChampionDefinitions {
           'Desierto de Gobi, Mongolia\n1972\nPor  Rinchen Barsbold, Halszka Osmólska y Ewa Roniewicz',
       curiosity:
           'Era un dinosaurio adaptado para la carrera. Su cuello y patas largas, además de su pico sin dientes, recuerdan a la avestruz actual.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Nueva vida'),
-        BattleGesture.paper: ChampionMovePreset(
-          name: 'Carrera',
-          effectDescription: 'Daño + Cambio de campeón',
-          effect: MoveEffect.swapSelf,
-          isCritical: true,
-        ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Puesto de vigía'),
-      },
     ),
     ChampionPreset(
       id: 'oviraptor',
@@ -581,17 +484,6 @@ abstract final class ChampionDefinitions {
           'Denver, Colorado\n1887\nPor George Cannon\nDescrito por Othniel Charles Marsh en 1888',
       curiosity:
           'Este es el animal con mejor protección frontal que ha existido nunca. Se ha representado en numerosas ocasiones viviendo en manadas, pero se debate que pudo ser un animal solitario, debido a su baja inteligencia.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Escudo corona'),
-        BattleGesture.paper: ChampionMovePreset(name: 'Pico quebrador'),
-        BattleGesture.scissors: ChampionMovePreset(
-          name: 'Embestida de las 3 puntas',
-          effectDescription:
-              'Daño. Hace el mismo daño cuando gana que cuando empata.',
-          isCritical: true,
-          dealsFullDamageOnDraw: true,
-        ),
-      },
     ),
     ChampionPreset(
       id: 'protoceratops',
@@ -603,21 +495,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Gansu, China\n1923\nPor Walter Granger y W. K. Gregory',
       curiosity:
           'Uno de los fósiles más famosos del mundo es el que nos muestra una batalla a muerte entre este animal y un Velociraptor. El Protoceratops muerde la muñeca del depredador, rompiéndola; mientras que el raptor le clava una de sus garras en el cuello.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Escudo corona'),
-        BattleGesture.paper: ChampionMovePreset(
-          name: 'Rompe muñecas',
-          effectDescription: 'Daño + Hueso roto',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.brokenBone,
-              target: StatusTarget.opponent,
-            ),
-          ],
-          isCritical: true,
-        ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Carga'),
-      },
     ),
     ChampionPreset(
       id: 'pachyrhinosaurus',
@@ -1190,21 +1067,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Wyoming, Estados Unidos\n1879\nPor Othniel Charles Marsh',
       curiosity:
           'Su cerebro era tan pequeño que se llegó a teorizar que tenía un segundo cerebro en la cola. Eran capaces de bombear sangre a sus placas para intimidar a los depredadores con colores vivos.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(name: 'Lanza ósea'),
-        BattleGesture.paper: ChampionMovePreset(
-          name: 'Placas de sangre',
-          effectDescription: 'Intimidación',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.intimidation,
-              target: StatusTarget.opponent,
-            ),
-          ],
-          isCritical: true,
-        ),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Posición defensiva'),
-      },
     ),
     ChampionPreset(
       id: 'kentrosaurus',
@@ -1272,21 +1134,6 @@ abstract final class ChampionDefinitions {
       discovery: 'Montana, Estados Unidos\n1906\nPor Barnum Brown',
       curiosity:
           'Su cráneo estaba también cubierto por placas, haciéndolo uno de los dinosaurios mejor protegidos de los ataques de depredadores. La maza en su cola era capaz de romper huesos de un solo golpe.',
-      moveOverrides: {
-        BattleGesture.rock: ChampionMovePreset(
-          name: 'Martillazo',
-          effectDescription: 'Daño + Hueso roto',
-          statusApplications: [
-            StatusApplication(
-              type: StatusType.brokenBone,
-              target: StatusTarget.opponent,
-            ),
-          ],
-          isCritical: true,
-        ),
-        BattleGesture.paper: ChampionMovePreset(name: 'Escamas dentadas'),
-        BattleGesture.scissors: ChampionMovePreset(name: 'Posición defensiva'),
-      },
     ),
     ChampionPreset(
       id: 'gastonia',

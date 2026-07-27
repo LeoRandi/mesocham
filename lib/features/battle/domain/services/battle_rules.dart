@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../champions/domain/entities/champion_move.dart';
+import '../../../species_cards/domain/entities/species_card.dart';
 import '../entities/battle_gesture.dart';
 import '../entities/battle_resolution.dart';
 import '../entities/battle_status.dart';
@@ -50,12 +51,18 @@ class StandardBattleRules implements BattleRules {
         targetTeam: opponentTeam,
         move: playerMove,
         potency: playerPotency,
+        applySecondaryEffects:
+            playerTeam.active.equippedSpeciesCard ==
+            SpeciesCard.unstoppableClash,
       );
       final opponentApplication = _applyMove(
         userTeam: playerApplication.targetTeam,
         targetTeam: playerApplication.userTeam,
         move: opponentMove,
         potency: opponentPotency,
+        applySecondaryEffects:
+            opponentTeam.active.equippedSpeciesCard ==
+            SpeciesCard.unstoppableClash,
       );
 
       return _buildResolution(
@@ -120,6 +127,7 @@ class StandardBattleRules implements BattleRules {
       targetTeam: playerTeam,
       move: opponentMove,
       potency: opponentMove.potency,
+      targetSwappedThisTurn: true,
     );
 
     return _buildResolution(
@@ -141,12 +149,10 @@ class StandardBattleRules implements BattleRules {
     required _MoveApplication playerApplication,
     required _MoveApplication opponentApplication,
   }) {
-    final nextPlayerTeam = playerApplication.userTeam
-        .tickStatuses()
-        .promoteIfActiveDefeated();
-    final nextOpponentTeam = opponentApplication.userTeam
-        .tickStatuses()
-        .promoteIfActiveDefeated();
+    final playerEndTurn = _finishTurn(playerApplication.userTeam);
+    final opponentEndTurn = _finishTurn(opponentApplication.userTeam);
+    final nextPlayerTeam = playerEndTurn.team;
+    final nextOpponentTeam = opponentEndTurn.team;
 
     return BattleResolution(
       outcome: outcome,
@@ -162,18 +168,34 @@ class StandardBattleRules implements BattleRules {
         before: originalOpponentTeam,
         after: nextOpponentTeam,
       ),
-      healingToPlayer: playerApplication.healing,
-      healingToOpponent: opponentApplication.healing,
+      healingToPlayer: playerApplication.healing + playerEndTurn.healing,
+      healingToOpponent: opponentApplication.healing + opponentEndTurn.healing,
       reserveDamageToPlayer: opponentApplication.reserveDamage,
       reserveDamageToOpponent: playerApplication.reserveDamage,
       playerSwapped:
           playerApplication.swapped ||
-          nextPlayerTeam.activeIndex != playerApplication.userTeam.activeIndex,
+          opponentApplication.targetSwapped ||
+          nextPlayerTeam.activeIndex != originalPlayerTeam.activeIndex,
       opponentSwapped:
           opponentApplication.swapped ||
-          nextOpponentTeam.activeIndex !=
-              opponentApplication.userTeam.activeIndex,
+          playerApplication.targetSwapped ||
+          nextOpponentTeam.activeIndex != originalOpponentTeam.activeIndex,
     );
+  }
+
+  ({BattleTeam team, double healing}) _finishTurn(BattleTeam team) {
+    var nextTeam = team.tickStatuses();
+    var healing = 0.0;
+    final active = nextTeam.active;
+
+    if (!active.isDefeated &&
+        active.equippedSpeciesCard == SpeciesCard.colossusAmongGiants) {
+      final healthBeforeRegeneration = active.currentHealth;
+      nextTeam = nextTeam.healActive(active.maxHealth * 0.08);
+      healing = nextTeam.active.currentHealth - healthBeforeRegeneration;
+    }
+
+    return (team: nextTeam.promoteIfActiveDefeated(), healing: healing);
   }
 
   List<int> _damagedIndexes({
@@ -193,28 +215,131 @@ class StandardBattleRules implements BattleRules {
     required BattleTeam targetTeam,
     required ChampionMove move,
     required double potency,
+    bool applySecondaryEffects = true,
+    bool targetSwappedThisTurn = false,
   }) {
+    final resolutions =
+        userTeam.active.equippedSpeciesCard == SpeciesCard.packPower ? 2 : 1;
+    var aggregate = _MoveApplication.noop(
+      userTeam: userTeam,
+      targetTeam: targetTeam,
+    );
+
+    for (var resolution = 0; resolution < resolutions; resolution++) {
+      final application = _applyMoveOnce(
+        userTeam: aggregate.userTeam,
+        targetTeam: aggregate.targetTeam,
+        move: move,
+        potency: potency,
+        applySecondaryEffects: applySecondaryEffects,
+        performSwap: resolution == resolutions - 1,
+        targetSwappedThisTurn: targetSwappedThisTurn,
+      );
+      aggregate = application.copyWith(
+        activeDamage: aggregate.activeDamage + application.activeDamage,
+        reserveDamage: aggregate.reserveDamage + application.reserveDamage,
+        healing: aggregate.healing + application.healing,
+        swapped: aggregate.swapped || application.swapped,
+        targetSwapped: aggregate.targetSwapped || application.targetSwapped,
+      );
+    }
+
+    return aggregate;
+  }
+
+  _MoveApplication _applyMoveOnce({
+    required BattleTeam userTeam,
+    required BattleTeam targetTeam,
+    required ChampionMove move,
+    required double potency,
+    required bool applySecondaryEffects,
+    required bool performSwap,
+    required bool targetSwappedThisTurn,
+  }) {
+    final damagePotency = _speciesModifiedDamagePotency(
+      attacker: userTeam.active,
+      move: move,
+      potency: potency,
+      targetSwappedThisTurn: targetSwappedThisTurn,
+    );
     var application = switch (move.effect) {
       MoveEffect.none => _MoveApplication.noop(
         userTeam: userTeam,
         targetTeam: targetTeam,
       ),
-      MoveEffect.damage => _damageActive(userTeam, targetTeam, potency),
-      MoveEffect.drainHealth => _drainHealth(userTeam, targetTeam, potency),
-      MoveEffect.healSelf => _healSelf(userTeam, targetTeam, potency),
-      MoveEffect.healTeam => _healTeam(userTeam, targetTeam, potency),
-      MoveEffect.damageTeam => _damageTeam(userTeam, targetTeam, potency),
-      MoveEffect.damageReserve => _damageReserve(userTeam, targetTeam, potency),
-      MoveEffect.swapSelf => _swapSelfAfterDamage(
+      MoveEffect.damage => _damageActive(
         userTeam,
         targetTeam,
-        potency,
+        damagePotency,
+        move.isCritical,
       ),
-      MoveEffect.recklessDamage => _recklessDamage(
+      MoveEffect.drainHealth =>
+        applySecondaryEffects
+            ? _drainHealth(userTeam, targetTeam, damagePotency, move.isCritical)
+            : _damageActive(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              ),
+      MoveEffect.healSelf =>
+        applySecondaryEffects
+            ? _healSelf(userTeam, targetTeam, potency)
+            : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
+      MoveEffect.healTeam =>
+        applySecondaryEffects
+            ? _healTeam(userTeam, targetTeam, potency)
+            : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
+      MoveEffect.damageTeam => _damageTeam(
         userTeam,
         targetTeam,
-        potency,
+        damagePotency,
+        move.isCritical,
       ),
+      MoveEffect.damageReserve => _damageReserve(
+        userTeam,
+        targetTeam,
+        damagePotency,
+        move.isCritical,
+      ),
+      MoveEffect.damageReserveAndPromote => _damageReserveAndPromote(
+        userTeam,
+        targetTeam,
+        damagePotency,
+        move.isCritical,
+      ),
+      MoveEffect.forceOpponentSwap =>
+        applySecondaryEffects
+            ? _forceOpponentSwap(userTeam, targetTeam)
+            : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
+      MoveEffect.swapSelf =>
+        applySecondaryEffects && performSwap
+            ? _swapSelfAfterDamage(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              )
+            : _damageActive(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              ),
+      MoveEffect.recklessDamage =>
+        applySecondaryEffects
+            ? _recklessDamage(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              )
+            : _damageActive(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              ),
     };
 
     final shouldConsumeAlpha =
@@ -228,23 +353,67 @@ class StandardBattleRules implements BattleRules {
       );
     }
 
-    return _applyStatuses(application, move.statusApplications);
+    if (applySecondaryEffects) {
+      if (move.selfHealing > 0) {
+        final healthBeforeHealing = application.userTeam.active.currentHealth;
+        final healedTeam = application.userTeam.healActive(move.selfHealing);
+        application = application.copyWith(
+          userTeam: healedTeam,
+          healing:
+              application.healing +
+              healedTeam.active.currentHealth -
+              healthBeforeHealing,
+        );
+      }
+      if (move.cleansesHarmfulStatuses) {
+        application = application.copyWith(
+          userTeam: application.userTeam.clearHarmfulStatusesFromActive(),
+        );
+      }
+      if (move.selfDamage > 0) {
+        application = application.copyWith(
+          userTeam: application.userTeam.damageActive(move.selfDamage),
+        );
+      }
+    }
+
+    return applySecondaryEffects
+        ? _applyStatuses(
+            application,
+            move.statusApplications,
+            isCritical: move.isCritical,
+            attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+          )
+        : application;
   }
 
   _MoveApplication _damageActive(
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
-    return _damageTarget(userTeam, targetTeam, targetTeam.activeIndex, potency);
+    return _damageTarget(
+      userTeam,
+      targetTeam,
+      targetTeam.activeIndex,
+      potency,
+      isCritical,
+    );
   }
 
   _MoveApplication _drainHealth(
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
-    final damageApplication = _damageActive(userTeam, targetTeam, potency);
+    final damageApplication = _damageActive(
+      userTeam,
+      targetTeam,
+      potency,
+      isCritical,
+    );
     final healing = damageApplication.activeDamage / 2;
     return damageApplication.copyWith(
       userTeam: damageApplication.userTeam.healActive(healing),
@@ -280,6 +449,7 @@ class StandardBattleRules implements BattleRules {
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
     var nextUserTeam = userTeam;
     var nextTargetTeam = targetTeam;
@@ -292,6 +462,7 @@ class StandardBattleRules implements BattleRules {
         nextTargetTeam,
         index,
         potency,
+        isCritical,
       );
       nextUserTeam = application.userTeam;
       nextTargetTeam = application.targetTeam;
@@ -311,12 +482,51 @@ class StandardBattleRules implements BattleRules {
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
     return _damageTarget(
       userTeam,
       targetTeam,
       targetTeam.firstReserveIndex ?? targetTeam.activeIndex,
       potency,
+      isCritical,
+    );
+  }
+
+  _MoveApplication _damageReserveAndPromote(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double potency,
+    bool isCritical,
+  ) {
+    final targetIndex = targetTeam.firstReserveIndex ?? targetTeam.activeIndex;
+    final damageApplication = _damageTarget(
+      userTeam,
+      targetTeam,
+      targetIndex,
+      potency,
+      isCritical,
+    );
+    final canPromoteTarget =
+        targetIndex != targetTeam.activeIndex &&
+        !damageApplication.targetTeam.combatants[targetIndex].isDefeated;
+    return damageApplication.copyWith(
+      targetTeam: canPromoteTarget
+          ? damageApplication.targetTeam.swapTo(targetIndex)
+          : damageApplication.targetTeam,
+      targetSwapped: canPromoteTarget,
+    );
+  }
+
+  _MoveApplication _forceOpponentSwap(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+  ) {
+    final canSwap = targetTeam.swapIndexes.isNotEmpty;
+    return _MoveApplication(
+      userTeam: userTeam,
+      targetTeam: canSwap ? targetTeam.swapToFirstReserve() : targetTeam,
+      targetSwapped: canSwap,
     );
   }
 
@@ -324,8 +534,14 @@ class StandardBattleRules implements BattleRules {
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
-    final damageApplication = _damageActive(userTeam, targetTeam, potency);
+    final damageApplication = _damageActive(
+      userTeam,
+      targetTeam,
+      potency,
+      isCritical,
+    );
     return damageApplication.copyWith(
       userTeam: damageApplication.userTeam.swapToFirstReserve(),
       swapped: damageApplication.userTeam.swapIndexes.isNotEmpty,
@@ -336,8 +552,14 @@ class StandardBattleRules implements BattleRules {
     BattleTeam userTeam,
     BattleTeam targetTeam,
     double potency,
+    bool isCritical,
   ) {
-    final damageApplication = _damageActive(userTeam, targetTeam, potency);
+    final damageApplication = _damageActive(
+      userTeam,
+      targetTeam,
+      potency,
+      isCritical,
+    );
     return damageApplication.copyWith(
       userTeam: damageApplication.userTeam.damageActive(
         damageApplication.activeDamage / 3,
@@ -350,18 +572,26 @@ class StandardBattleRules implements BattleRules {
     BattleTeam targetTeam,
     int targetIndex,
     double potency,
+    bool isCritical,
   ) {
     final target = targetTeam.combatants[targetIndex];
-    final modifiedDamage = _modifiedDamage(
+    var modifiedDamage = _modifiedDamage(
       attacker: userTeam.active,
       defender: target,
       potency: potency,
     );
-    final actualDamage = math.min(target.currentHealth, modifiedDamage);
+    if (isCritical &&
+        targetIndex == targetTeam.activeIndex &&
+        target.equippedSpeciesCard == SpeciesCard.sourceOfLife) {
+      modifiedDamage *= 0.34;
+    }
+
+    final damagedTarget = target.takeDamage(modifiedDamage);
+    final actualDamage = target.currentHealth - damagedTarget.currentHealth;
     var nextUserTeam = userTeam;
     final nextTargetTeam = targetTeam.replaceCombatant(
       targetIndex,
-      target.takeDamage(modifiedDamage),
+      damagedTarget,
     );
 
     if (actualDamage > 0 && target.hasStatus(StatusType.jaggedScales)) {
@@ -378,20 +608,28 @@ class StandardBattleRules implements BattleRules {
 
   _MoveApplication _applyStatuses(
     _MoveApplication application,
-    List<StatusApplication> statusApplications,
-  ) {
+    List<StatusApplication> statusApplications, {
+    required bool isCritical,
+    required SpeciesCard? attackerSpeciesCard,
+  }) {
     var nextApplication = application;
 
     for (final statusApplication in statusApplications) {
-      nextApplication = switch (statusApplication.target) {
+      final adjustedApplication = _adjustStatusApplication(
+        statusApplication,
+        isCritical: isCritical,
+        attackerSpeciesCard: attackerSpeciesCard,
+        targetTeam: nextApplication.targetTeam,
+      );
+      nextApplication = switch (adjustedApplication.target) {
         StatusTarget.self => nextApplication.copyWith(
           userTeam: nextApplication.userTeam.applyStatusToActive(
-            statusApplication,
+            adjustedApplication,
           ),
         ),
         StatusTarget.opponent => nextApplication.copyWith(
           targetTeam: nextApplication.targetTeam.applyStatusToActive(
-            statusApplication,
+            adjustedApplication,
           ),
         ),
       };
@@ -399,6 +637,68 @@ class StandardBattleRules implements BattleRules {
 
     return nextApplication;
   }
+
+  StatusApplication _adjustStatusApplication(
+    StatusApplication application, {
+    required bool isCritical,
+    required SpeciesCard? attackerSpeciesCard,
+    required BattleTeam targetTeam,
+  }) {
+    final baseDuration = application.resolvedDurationTurns;
+    if (!isCritical || baseDuration == null) return application;
+
+    var duration = baseDuration;
+    if (attackerSpeciesCard == SpeciesCard.shadowHunter) {
+      duration += 2;
+    }
+    if (application.target == StatusTarget.opponent &&
+        targetTeam.active.equippedSpeciesCard == SpeciesCard.sourceOfLife) {
+      duration = 1;
+    }
+
+    return StatusApplication(
+      type: application.type,
+      target: application.target,
+      stacks: application.stacks,
+      durationTurns: duration,
+    );
+  }
+
+  double _speciesModifiedDamagePotency({
+    required Combatant attacker,
+    required ChampionMove move,
+    required double potency,
+    required bool targetSwappedThisTurn,
+  }) {
+    if (!_dealsDamage(move.effect)) return potency;
+
+    final conditionalPotency = targetSwappedThisTurn
+        ? move.bonusPotencyIfTargetSwapped
+        : 0;
+    var multiplier = 1.0;
+    if (attacker.equippedSpeciesCard == SpeciesCard.superPredator) {
+      multiplier *= 1.5;
+    }
+    if (move.isCritical &&
+        attacker.equippedSpeciesCard == SpeciesCard.shadowHunter) {
+      multiplier *= 1.66;
+    }
+    return (potency + conditionalPotency) * multiplier;
+  }
+
+  bool _dealsDamage(MoveEffect effect) => switch (effect) {
+    MoveEffect.damage ||
+    MoveEffect.drainHealth ||
+    MoveEffect.damageTeam ||
+    MoveEffect.damageReserve ||
+    MoveEffect.damageReserveAndPromote ||
+    MoveEffect.swapSelf ||
+    MoveEffect.recklessDamage => true,
+    MoveEffect.none ||
+    MoveEffect.healSelf ||
+    MoveEffect.healTeam ||
+    MoveEffect.forceOpponentSwap => false,
+  };
 
   double _modifiedDamage({
     required Combatant attacker,
@@ -424,6 +724,7 @@ class _MoveApplication {
     this.reserveDamage = 0,
     this.healing = 0,
     this.swapped = false,
+    this.targetSwapped = false,
   });
 
   factory _MoveApplication.noop({
@@ -439,6 +740,7 @@ class _MoveApplication {
   final double reserveDamage;
   final double healing;
   final bool swapped;
+  final bool targetSwapped;
 
   _MoveApplication copyWith({
     BattleTeam? userTeam,
@@ -447,6 +749,7 @@ class _MoveApplication {
     double? reserveDamage,
     double? healing,
     bool? swapped,
+    bool? targetSwapped,
   }) {
     return _MoveApplication(
       userTeam: userTeam ?? this.userTeam,
@@ -455,6 +758,7 @@ class _MoveApplication {
       reserveDamage: reserveDamage ?? this.reserveDamage,
       healing: healing ?? this.healing,
       swapped: swapped ?? this.swapped,
+      targetSwapped: targetSwapped ?? this.targetSwapped,
     );
   }
 

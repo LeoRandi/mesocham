@@ -3,6 +3,7 @@ import '../../domain/entities/champion.dart';
 import '../../domain/entities/champion_definition.dart';
 import '../../domain/entities/champion_move.dart';
 import '../../domain/repositories/champion_catalog.dart';
+import 'champion_critical_move_definitions.dart';
 import 'champion_definitions.dart';
 import 'champion_type_presets.dart';
 
@@ -38,15 +39,12 @@ class LocalChampionCatalog implements ChampionCatalog {
 
   Champion _buildChampion(ChampionDefinition definition) {
     final typeMoves = ChampionTypeMoveDefinitions.forType(definition.type);
+    final criticalMoves = ChampionCriticalMoveDefinitions.forChampion(
+      definition.id,
+    );
     final moves = [
       for (final gesture in BattleGesture.values)
-        _buildMove(
-          gesture,
-          definition.moveOverrides[gesture]?.isCritical ?? false
-              ? definition.moveOverrides[gesture]!
-              : typeMoves[gesture]!,
-          normalPotency: typeMoves[gesture]!.potency,
-        ),
+        _buildMove(gesture, criticalMoves[gesture] ?? typeMoves[gesture]!),
     ];
 
     return Champion(
@@ -64,13 +62,12 @@ class LocalChampionCatalog implements ChampionCatalog {
 
   ChampionMove _buildMove(
     BattleGesture gesture,
-    ChampionMoveDefinition definition, {
-    required double normalPotency,
-  }) {
+    ChampionMoveDefinition definition,
+  ) {
     return ChampionMove(
       name: definition.name,
       gesture: gesture,
-      potency: definition.isCritical ? normalPotency : definition.potency,
+      potency: definition.potency,
       effect: definition.effect,
       description:
           definition.effectDescription ??
@@ -81,6 +78,10 @@ class LocalChampionCatalog implements ChampionCatalog {
       effectTurns: definition.effectTurns,
       isCritical: definition.isCritical,
       dealsFullDamageOnDraw: definition.dealsFullDamageOnDraw,
+      selfHealing: definition.selfHealing,
+      selfDamage: definition.selfDamage,
+      bonusPotencyIfTargetSwapped: definition.bonusPotencyIfTargetSwapped,
+      cleansesHarmfulStatuses: definition.cleansesHarmfulStatuses,
     );
   }
 

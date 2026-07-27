@@ -1,6 +1,7 @@
 import '../../../champions/domain/entities/champion_move.dart';
 import 'battle_gesture.dart';
 import 'battle_resolution.dart';
+import 'battle_status.dart';
 import 'battle_team.dart';
 import 'battle_turn.dart';
 import 'combatant.dart';
@@ -17,6 +18,7 @@ class BattleState {
     this.lastResolution,
     this.previousTurn,
     this.pendingAction,
+    this.pendingPlayerSpeciesCardIndex,
     this.resolutionSequence = 0,
   });
 
@@ -28,6 +30,7 @@ class BattleState {
   final BattleResolution? lastResolution;
   final BattleTurn? previousTurn;
   final PendingBattleAction? pendingAction;
+  final int? pendingPlayerSpeciesCardIndex;
   final int resolutionSequence;
 
   Combatant get player => playerTeam.active;
@@ -41,7 +44,18 @@ class BattleState {
   bool get canShowdown =>
       phase == BattlePhase.choosingMove && playerGesture != null;
   bool get canSwap =>
-      phase == BattlePhase.command && playerSwapIndexes.isNotEmpty;
+      phase == BattlePhase.command &&
+      playerSwapIndexes.isNotEmpty &&
+      !player.hasStatus(StatusType.swapLocked);
+
+  bool canSelectPlayerSpeciesCard(int index) {
+    return phase == BattlePhase.command &&
+        index >= 0 &&
+        index < playerTeam.speciesCardSlots.length &&
+        !playerTeam.speciesCardSlots[index].consumed &&
+        !playerTeam.active.isDefeated &&
+        playerTeam.active.equippedSpeciesCard == null;
+  }
 
   ChampionMove? get selectedPlayerMove =>
       playerGesture == null ? null : player.champion.moveFor(playerGesture!);
@@ -60,6 +74,8 @@ class BattleState {
     bool clearPreviousTurn = false,
     PendingBattleAction? pendingAction,
     bool clearPendingAction = false,
+    int? pendingPlayerSpeciesCardIndex,
+    bool clearPendingPlayerSpeciesCard = false,
     int? resolutionSequence,
   }) {
     return BattleState(
@@ -81,6 +97,9 @@ class BattleState {
       pendingAction: clearPendingAction
           ? null
           : pendingAction ?? this.pendingAction,
+      pendingPlayerSpeciesCardIndex: clearPendingPlayerSpeciesCard
+          ? null
+          : pendingPlayerSpeciesCardIndex ?? this.pendingPlayerSpeciesCardIndex,
       resolutionSequence: resolutionSequence ?? this.resolutionSequence,
     );
   }

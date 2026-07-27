@@ -32,4 +32,25 @@ class BattleResolution {
   final double reserveDamageToOpponent;
   final bool playerSwapped;
   final bool opponentSwapped;
+
+  BattleResolution copyWith({
+    BattleTeam? playerTeam,
+    BattleTeam? opponentTeam,
+  }) {
+    return BattleResolution(
+      outcome: outcome,
+      damageToPlayer: damageToPlayer,
+      damageToOpponent: damageToOpponent,
+      playerTeam: playerTeam ?? this.playerTeam,
+      opponentTeam: opponentTeam ?? this.opponentTeam,
+      damagedPlayerIndexes: damagedPlayerIndexes,
+      damagedOpponentIndexes: damagedOpponentIndexes,
+      healingToPlayer: healingToPlayer,
+      healingToOpponent: healingToOpponent,
+      reserveDamageToPlayer: reserveDamageToPlayer,
+      reserveDamageToOpponent: reserveDamageToOpponent,
+      playerSwapped: playerSwapped,
+      opponentSwapped: opponentSwapped,
+    );
+  }
 }
