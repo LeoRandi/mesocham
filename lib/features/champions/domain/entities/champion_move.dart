@@ -1,5 +1,5 @@
 import 'battle_gesture.dart';
-import 'battle_status.dart';
+import 'status_effect.dart';
 
 enum MoveEffect {
   none,
@@ -14,17 +14,17 @@ enum MoveEffect {
 }
 
 class ChampionMove {
-  const ChampionMove({
+  ChampionMove({
     required this.name,
     required this.gesture,
     required this.potency,
     required this.effect,
     required this.description,
-    this.statusApplications = const [],
+    List<StatusApplication> statusApplications = const [],
     this.effectTurns = 0,
     this.isCritical = false,
     this.dealsFullDamageOnDraw = false,
-  });
+  }) : statusApplications = List.unmodifiable(statusApplications);
 
   final String name;
   final BattleGesture gesture;

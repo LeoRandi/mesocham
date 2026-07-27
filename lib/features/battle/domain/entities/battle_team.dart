@@ -1,11 +1,26 @@
-import 'champion.dart';
+import '../../../champions/domain/entities/champion.dart';
 import 'combatant.dart';
 import 'battle_status.dart';
 
 class BattleTeam {
-  const BattleTeam({required this.combatants, this.activeIndex = 0})
-    : assert(combatants.length == 3, 'Each team needs exactly 3 champions.'),
-      assert(activeIndex >= 0 && activeIndex < 3);
+  BattleTeam({required List<Combatant> combatants, this.activeIndex = 0})
+    : combatants = List.unmodifiable(combatants) {
+    if (combatants.length != 3) {
+      throw ArgumentError.value(
+        combatants.length,
+        'combatants',
+        'Each team needs exactly 3 champions.',
+      );
+    }
+    if (activeIndex < 0 || activeIndex >= combatants.length) {
+      throw RangeError.range(
+        activeIndex,
+        0,
+        combatants.length - 1,
+        'activeIndex',
+      );
+    }
+  }
 
   factory BattleTeam.fresh(List<Champion> champions) {
     return BattleTeam(

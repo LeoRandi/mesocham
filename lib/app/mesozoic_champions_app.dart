@@ -2,32 +2,53 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/battle/presentation/pages/battle_room_page.dart';
+import '../features/champions/data/local/local_champion_catalog.dart';
+import '../features/champions/domain/repositories/champion_catalog.dart';
 import '../features/collection/presentation/pages/collection_page.dart';
+import '../features/home/data/player_preferences.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/loading/presentation/pages/game_loading_page.dart';
 import '../features/menu/presentation/pages/game_menu_page.dart';
 
 class MesozoicChampionsApp extends StatelessWidget {
-  const MesozoicChampionsApp({super.key});
+  const MesozoicChampionsApp({super.key, this.catalog, this.playerPreferences});
+
+  final ChampionCatalog? catalog;
+  final PlayerPreferences? playerPreferences;
 
   @override
   Widget build(BuildContext context) {
+    final resolvedCatalog = catalog ?? LocalChampionCatalog();
+    final resolvedPlayerPreferences = playerPreferences ?? PlayerPreferences();
+
     return MaterialApp(
       title: 'Mesozoic Champions',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
       initialRoute: '/',
-      onGenerateRoute: _onGenerateRoute,
+      onGenerateRoute: (settings) => _onGenerateRoute(
+        settings,
+        catalog: resolvedCatalog,
+        playerPreferences: resolvedPlayerPreferences,
+      ),
     );
   }
 
-  Route<void> _onGenerateRoute(RouteSettings settings) {
+  Route<void> _onGenerateRoute(
+    RouteSettings settings, {
+    required ChampionCatalog catalog,
+    required PlayerPreferences playerPreferences,
+  }) {
     final loadingDestination = settings.arguments is String
         ? settings.arguments! as String
         : '/menu';
     final page = switch (settings.name) {
-      '/menu' => const GameMenuPage(),
+      '/menu' => GameMenuPage(
+        catalog: catalog,
+        playerPreferences: playerPreferences,
+      ),
       '/loading' => GameLoadingPage(
+        catalog: catalog,
         destinationRoute: loadingDestination,
         retainedRouteName:
             loadingDestination == '/battle' ||
@@ -35,9 +56,15 @@ class MesozoicChampionsApp extends StatelessWidget {
             ? '/menu'
             : null,
       ),
-      '/battle' => const BattleRoomPage(),
-      '/collection' => const CollectionPage(),
-      _ => const HomePage(),
+      '/battle' => BattleRoomPage(
+        catalog: catalog,
+        playerPreferences: playerPreferences,
+      ),
+      '/collection' => CollectionPage(
+        catalog: catalog,
+        playerPreferences: playerPreferences,
+      ),
+      _ => HomePage(catalog: catalog, playerPreferences: playerPreferences),
     };
     final usesHorizontalTransition =
         settings.name == '/menu' ||

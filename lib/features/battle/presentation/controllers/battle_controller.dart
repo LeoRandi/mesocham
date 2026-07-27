@@ -1,198 +1,76 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../champions/domain/entities/champion_move.dart';
+import '../../application/services/battle_session.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
+import '../../domain/entities/battle_state.dart';
 import '../../domain/entities/battle_team.dart';
-import '../../domain/entities/battle_turn.dart';
-import '../../domain/entities/champion_move.dart';
 import '../../domain/entities/combatant.dart';
-import '../../domain/services/ai_move_strategy.dart';
-import '../../domain/services/battle_rules.dart';
 
 class BattleController extends ChangeNotifier {
   BattleController({
     required BattleTeam playerTeam,
     required BattleTeam opponentTeam,
-    required BattleRules rules,
-    required AiMoveStrategy opponentStrategy,
-  }) : _initialPlayerTeam = playerTeam,
-       _initialOpponentTeam = opponentTeam,
-       _playerTeam = playerTeam,
-       _opponentTeam = opponentTeam,
-       _rules = rules,
-       _opponentStrategy = opponentStrategy;
+    required BattleSession session,
+  }) : _session = session,
+       _initialState = session.initialState(
+         playerTeam: playerTeam,
+         opponentTeam: opponentTeam,
+       ),
+       _state = session.initialState(
+         playerTeam: playerTeam,
+         opponentTeam: opponentTeam,
+       );
 
-  final BattleTeam _initialPlayerTeam;
-  final BattleTeam _initialOpponentTeam;
-  final BattleRules _rules;
-  final AiMoveStrategy _opponentStrategy;
+  final BattleSession _session;
+  final BattleState _initialState;
+  BattleState _state;
 
-  BattleTeam _playerTeam;
-  BattleTeam _opponentTeam;
-  BattlePhase _phase = BattlePhase.command;
-  BattleGesture? _playerGesture;
-  BattleGesture? _opponentGesture;
-  BattleResolution? _lastResolution;
-  BattleTurn? _previousTurn;
-  bool _disposed = false;
-  bool _resolving = false;
+  BattleState get state => _state;
+  Combatant get player => _state.player;
+  Combatant get opponent => _state.opponent;
+  BattleTeam get playerTeam => _state.playerTeam;
+  BattleTeam get opponentTeam => _state.opponentTeam;
+  BattlePhase get phase => _state.phase;
+  BattleGesture? get playerGesture => _state.playerGesture;
+  BattleResolution? get lastResolution => _state.lastResolution;
+  int get resolutionSequence => _state.resolutionSequence;
+  List<int> get playerSwapIndexes => _state.playerSwapIndexes;
+  bool get isFightOverlayVisible => _state.isFightOverlayVisible;
+  bool get isSwapOverlayVisible => _state.isSwapOverlayVisible;
+  bool get canShowdown => _state.canShowdown;
+  bool get canSwap => _state.canSwap;
+  ChampionMove? get selectedPlayerMove => _state.selectedPlayerMove;
 
-  Combatant get player => _playerTeam.active;
-  Combatant get opponent => _opponentTeam.active;
-  BattleTeam get playerTeam => _playerTeam;
-  BattleTeam get opponentTeam => _opponentTeam;
-  BattlePhase get phase => _phase;
-  BattleGesture? get playerGesture => _playerGesture;
-  BattleResolution? get lastResolution => _lastResolution;
-  List<int> get playerSwapIndexes => _playerTeam.swapIndexes;
-  bool get isFightOverlayVisible =>
-      _phase == BattlePhase.choosingMove || _phase == BattlePhase.resolving;
-  bool get isSwapOverlayVisible => _phase == BattlePhase.swapping;
-  bool get canShowdown =>
-      _phase == BattlePhase.choosingMove && _playerGesture != null;
-  bool get canSwap =>
-      _phase == BattlePhase.command && playerSwapIndexes.isNotEmpty;
+  void startFight() => _emit(_session.startFight(_state));
 
-  ChampionMove? get selectedPlayerMove =>
-      _playerGesture == null ? null : player.champion.moveFor(_playerGesture!);
+  void startSwap() => _emit(_session.startSwap(_state));
 
-  void startFight() {
-    if (_phase != BattlePhase.command) return;
-
-    _lastResolution = null;
-    _playerGesture = null;
-    _opponentGesture = _opponentStrategy.chooseMove(
-      self: opponent,
-      opponent: player,
-      previousTurn: _previousTurn,
-    );
-    _phase = BattlePhase.choosingMove;
-    notifyListeners();
-  }
-
-  void startSwap() {
-    if (!canSwap) return;
-
-    _lastResolution = null;
-    _playerGesture = null;
-    _opponentGesture = _opponentStrategy.chooseMove(
-      self: opponent,
-      opponent: player,
-      previousTurn: _previousTurn,
-    );
-    _phase = BattlePhase.swapping;
-    notifyListeners();
-  }
-
-  void cancelSwap() {
-    if (_phase != BattlePhase.swapping) return;
-
-    _opponentGesture = null;
-    _phase = BattlePhase.command;
-    notifyListeners();
-  }
-
-  Future<void> swapPlayerTo(int index) async {
-    if (_phase != BattlePhase.swapping ||
-        !_playerTeam.swapIndexes.contains(index) ||
-        _opponentGesture == null ||
-        _resolving) {
-      return;
-    }
-
-    _resolving = true;
-    _playerTeam = _playerTeam.swapTo(index);
-    _phase = BattlePhase.resolving;
-    notifyListeners();
-
-    await Future<void>.delayed(const Duration(milliseconds: 420));
-    if (_disposed) return;
-
-    final resolution = _rules.resolveGuaranteedOpponentMove(
-      playerTeam: _playerTeam,
-      opponentTeam: _opponentTeam,
-      opponentGesture: _opponentGesture!,
-    );
-    _previousTurn = null;
-    _lastResolution = resolution;
-    _playerTeam = resolution.playerTeam;
-    _opponentTeam = resolution.opponentTeam;
-    notifyListeners();
-
-    await Future<void>.delayed(const Duration(milliseconds: 1250));
-    if (_disposed) return;
-
-    _phase = _playerTeam.isDefeated || _opponentTeam.isDefeated
-        ? BattlePhase.gameOver
-        : BattlePhase.command;
-    _playerGesture = null;
-    _opponentGesture = null;
-    _lastResolution = null;
-    _resolving = false;
-    notifyListeners();
-  }
+  void cancelSwap() => _emit(_session.cancelSwap(_state));
 
   void selectPlayerGesture(BattleGesture gesture) {
-    if (_phase != BattlePhase.choosingMove) return;
-
-    _playerGesture = gesture;
-    notifyListeners();
+    _emit(_session.selectPlayerGesture(_state, gesture));
   }
 
-  Future<void> showdown() async {
-    if (!canShowdown || _resolving) return;
+  bool beginShowdown() => _emit(_session.beginShowdown(_state));
 
-    _resolving = true;
-    _phase = BattlePhase.resolving;
-    notifyListeners();
+  bool beginSwap(int index) => _emit(_session.beginSwap(_state, index));
 
-    await Future<void>.delayed(const Duration(milliseconds: 420));
-    if (_disposed) return;
-
-    final resolution = _rules.resolve(
-      playerTeam: _playerTeam,
-      opponentTeam: _opponentTeam,
-      playerGesture: _playerGesture!,
-      opponentGesture: _opponentGesture!,
-    );
-    _previousTurn = BattleTurn(
-      playerGesture: _playerGesture!,
-      opponentGesture: _opponentGesture!,
-      outcome: resolution.outcome,
-    );
-    _lastResolution = resolution;
-    _playerTeam = resolution.playerTeam;
-    _opponentTeam = resolution.opponentTeam;
-    notifyListeners();
-
-    await Future<void>.delayed(const Duration(milliseconds: 1250));
-    if (_disposed) return;
-
-    _phase = _playerTeam.isDefeated || _opponentTeam.isDefeated
-        ? BattlePhase.gameOver
-        : BattlePhase.command;
-    _playerGesture = null;
-    _opponentGesture = null;
-    _lastResolution = null;
-    _resolving = false;
-    notifyListeners();
+  bool resolvePendingAction() {
+    return _emit(_session.resolvePendingAction(_state));
   }
 
-  void resetBattle() {
-    _playerTeam = _initialPlayerTeam;
-    _opponentTeam = _initialOpponentTeam;
-    _phase = BattlePhase.command;
-    _playerGesture = null;
-    _opponentGesture = null;
-    _lastResolution = null;
-    _previousTurn = null;
-    _resolving = false;
-    notifyListeners();
+  bool completeResolution() {
+    return _emit(_session.completeResolution(_state));
   }
 
-  @override
-  void dispose() {
-    _disposed = true;
-    super.dispose();
+  void resetBattle() => _emit(_initialState);
+
+  bool _emit(BattleState nextState) {
+    if (identical(nextState, _state)) return false;
+    _state = nextState;
+    notifyListeners();
+    return true;
   }
 }

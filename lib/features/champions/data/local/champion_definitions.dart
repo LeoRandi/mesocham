@@ -1,10 +1,10 @@
 import '../../domain/entities/battle_gesture.dart';
-import '../../domain/entities/battle_status.dart';
 import '../../domain/entities/champion.dart';
+import '../../domain/entities/champion_definition.dart';
 import '../../domain/entities/champion_move.dart';
-import '../../domain/entities/champion_preset.dart';
+import '../../domain/entities/status_effect.dart';
 
-abstract final class ChampionPresets {
+abstract final class ChampionDefinitions {
   static const List<ChampionPreset> all = [
     // Jaw
     ChampionPreset(
@@ -1336,16 +1336,4 @@ abstract final class ChampionPresets {
           'Posiblemente sus restos están formados por material mezclado de Hylaeosaurus y Polacanthus. Aunque Carpenter propuso que la escápula del ejemplar demuestra que es válido, es considerado por la mayoría de los paleontólogos como un dinosaurio dudoso.',
     ),
   ];
-
-  static final Map<String, ChampionPreset> byId = Map.unmodifiable({
-    for (final preset in all) preset.id: preset,
-  });
-
-  static ChampionPreset? findById(String id) => byId[id];
-
-  static Iterable<ChampionPreset> forType(ChampionType type) =>
-      all.where((preset) => preset.type == type);
-
-  static Iterable<ChampionPreset> forPeriod(MesozoicPeriod period) =>
-      all.where((preset) => preset.period == period);
 }

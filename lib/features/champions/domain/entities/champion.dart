@@ -12,17 +12,25 @@ class Champion {
     required this.period,
     required this.type,
     required this.maxHealth,
-    required this.moves,
-    this.imageAssetPath,
+    required List<ChampionMove> moves,
+    required this.imageAssetPath,
     this.closeUpAssetPath,
-  }) : assert(moves.length == 3, 'Every champion needs exactly three moves.');
+  }) : moves = List.unmodifiable(moves) {
+    if (moves.length != BattleGesture.values.length) {
+      throw ArgumentError.value(
+        moves.length,
+        'moves',
+        'Every champion needs exactly three moves.',
+      );
+    }
+  }
 
   final String id;
   final String name;
   final MesozoicPeriod period;
   final ChampionType type;
   final int maxHealth;
-  final String? imageAssetPath;
+  final String imageAssetPath;
   final String? closeUpAssetPath;
   final List<ChampionMove> moves;
 

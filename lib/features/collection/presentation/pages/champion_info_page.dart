@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/domain/entities/battle_gesture.dart';
-import '../../../battle/domain/entities/champion.dart';
-import '../../../battle/domain/entities/champion_move.dart';
-import '../../../battle/domain/entities/champion_preset.dart';
 import '../../../battle/presentation/widgets/battle_backdrop.dart';
-import '../../../battle/presentation/widgets/champion_card.dart';
-import '../../../battle/presentation/widgets/champion_type_emblem.dart';
+import '../../../champions/domain/entities/battle_gesture.dart';
+import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/entities/champion_definition.dart';
+import '../../../champions/domain/entities/champion_move.dart';
+import '../../../champions/presentation/widgets/champion_card.dart';
+import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 
 class ChampionInfoPage extends StatefulWidget {
   const ChampionInfoPage({
@@ -23,7 +23,7 @@ class ChampionInfoPage extends StatefulWidget {
   });
 
   final Champion champion;
-  final ChampionPreset preset;
+  final ChampionDefinition preset;
   final int copyCount;
   final bool discovered;
 
@@ -296,7 +296,7 @@ class _ChampionDossier extends StatelessWidget {
   });
 
   final Champion champion;
-  final ChampionPreset preset;
+  final ChampionDefinition preset;
   final int selectedMoveIndex;
   final ScrollController scrollController;
   final bool compact;

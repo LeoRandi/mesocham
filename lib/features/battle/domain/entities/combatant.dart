@@ -1,13 +1,13 @@
+import '../../../champions/domain/entities/champion.dart';
 import 'battle_status.dart';
-import 'champion.dart';
 
 class Combatant {
-  const Combatant({
+  Combatant({
     required this.champion,
     required this.currentHealth,
     this.maxHealthPenalty = 0,
-    this.statuses = const [],
-  });
+    List<StatusCondition> statuses = const [],
+  }) : statuses = List.unmodifiable(statuses);
 
   factory Combatant.fresh(Champion champion) {
     return Combatant(

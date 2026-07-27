@@ -64,12 +64,12 @@ class _BattleBackdropPainter extends CustomPainter {
     }
 
     final ringPaint = Paint()
-      ..color = AppColors.bone.withValues(alpha: 0.045)
+      ..color = AppColors.bone.withValues(alpha: 0.026)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(14, size.width * 0.016);
+      ..strokeWidth = math.max(10, size.width * 0.011);
     canvas.drawCircle(
       Offset(size.width / 2, size.height / 2),
-      math.min(size.width, size.height) * 0.34,
+      math.min(size.width, size.height) * 0.3,
       ringPaint,
     );
   }

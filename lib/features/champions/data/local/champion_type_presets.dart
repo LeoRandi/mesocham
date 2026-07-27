@@ -1,10 +1,10 @@
 import '../../domain/entities/battle_gesture.dart';
-import '../../domain/entities/battle_status.dart';
 import '../../domain/entities/champion.dart';
+import '../../domain/entities/champion_definition.dart';
 import '../../domain/entities/champion_move.dart';
-import '../../domain/entities/champion_preset.dart';
+import '../../domain/entities/status_effect.dart';
 
-abstract final class ChampionTypeMovePresets {
+abstract final class ChampionTypeMoveDefinitions {
   static const Map<ChampionType, Map<BattleGesture, ChampionMovePreset>>
   byType = {
     ChampionType.jaw: {
@@ -199,7 +199,7 @@ abstract final class ChampionTypeMovePresets {
       byType[type]!;
 }
 
-abstract final class ChampionTypeHealthPresets {
+abstract final class ChampionTypeHealthDefinitions {
   static const Map<ChampionType, int> byType = {
     ChampionType.jaw: 190,
     ChampionType.nest: 210,

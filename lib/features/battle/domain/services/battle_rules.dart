@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
+import '../../../champions/domain/entities/champion_move.dart';
 import '../entities/battle_gesture.dart';
 import '../entities/battle_resolution.dart';
 import '../entities/battle_status.dart';
 import '../entities/battle_team.dart';
-import '../entities/champion_move.dart';
 import '../entities/combatant.dart';
 
 abstract interface class BattleRules {
@@ -60,6 +60,8 @@ class StandardBattleRules implements BattleRules {
 
       return _buildResolution(
         outcome: BattleOutcome.draw,
+        originalPlayerTeam: playerTeam,
+        originalOpponentTeam: opponentTeam,
         playerApplication: playerApplication.mergeUserTeam(
           opponentApplication.targetTeam,
         ),
@@ -77,6 +79,8 @@ class StandardBattleRules implements BattleRules {
 
       return _buildResolution(
         outcome: BattleOutcome.playerVictory,
+        originalPlayerTeam: playerTeam,
+        originalOpponentTeam: opponentTeam,
         playerApplication: playerApplication,
         opponentApplication: _MoveApplication.noop(
           userTeam: playerApplication.targetTeam,
@@ -94,6 +98,8 @@ class StandardBattleRules implements BattleRules {
 
     return _buildResolution(
       outcome: BattleOutcome.opponentVictory,
+      originalPlayerTeam: playerTeam,
+      originalOpponentTeam: opponentTeam,
       playerApplication: _MoveApplication.noop(
         userTeam: opponentApplication.targetTeam,
         targetTeam: opponentApplication.userTeam,
@@ -118,6 +124,8 @@ class StandardBattleRules implements BattleRules {
 
     return _buildResolution(
       outcome: BattleOutcome.opponentVictory,
+      originalPlayerTeam: playerTeam,
+      originalOpponentTeam: opponentTeam,
       playerApplication: _MoveApplication.noop(
         userTeam: opponentApplication.targetTeam,
         targetTeam: opponentApplication.userTeam,
@@ -128,6 +136,8 @@ class StandardBattleRules implements BattleRules {
 
   BattleResolution _buildResolution({
     required BattleOutcome outcome,
+    required BattleTeam originalPlayerTeam,
+    required BattleTeam originalOpponentTeam,
     required _MoveApplication playerApplication,
     required _MoveApplication opponentApplication,
   }) {
@@ -144,6 +154,14 @@ class StandardBattleRules implements BattleRules {
       damageToOpponent: playerApplication.activeDamage,
       playerTeam: nextPlayerTeam,
       opponentTeam: nextOpponentTeam,
+      damagedPlayerIndexes: _damagedIndexes(
+        before: originalPlayerTeam,
+        after: nextPlayerTeam,
+      ),
+      damagedOpponentIndexes: _damagedIndexes(
+        before: originalOpponentTeam,
+        after: nextOpponentTeam,
+      ),
       healingToPlayer: playerApplication.healing,
       healingToOpponent: opponentApplication.healing,
       reserveDamageToPlayer: opponentApplication.reserveDamage,
@@ -156,6 +174,18 @@ class StandardBattleRules implements BattleRules {
           nextOpponentTeam.activeIndex !=
               opponentApplication.userTeam.activeIndex,
     );
+  }
+
+  List<int> _damagedIndexes({
+    required BattleTeam before,
+    required BattleTeam after,
+  }) {
+    return [
+      for (var index = 0; index < before.combatants.length; index++)
+        if (after.combatants[index].currentHealth <
+            before.combatants[index].currentHealth)
+          index,
+    ];
   }
 
   _MoveApplication _applyMove({

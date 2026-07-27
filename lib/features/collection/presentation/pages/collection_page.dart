@@ -5,40 +5,28 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/data/champion_artwork_assets.dart';
-import '../../../battle/data/demo_battle_factory.dart';
-import '../../../battle/data/presets/champion_presets.dart';
-import '../../../battle/domain/entities/champion.dart';
 import '../../../battle/presentation/widgets/battle_backdrop.dart';
-import '../../../battle/presentation/widgets/champion_card.dart';
+import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/repositories/champion_catalog.dart';
+import '../../../champions/presentation/widgets/champion_card.dart';
 import '../../../home/data/player_preferences.dart';
 import 'champion_info_page.dart';
 
-final List<Champion> _collectionChampions = List.unmodifiable(
-  ChampionPresets.all.map((preset) {
-    final champion = DemoBattleFactory.championFromPreset(preset);
-    return Champion(
-      id: champion.id,
-      name: champion.name,
-      period: champion.period,
-      type: champion.type,
-      maxHealth: champion.maxHealth,
-      moves: champion.moves,
-      imageAssetPath: ChampionArtworkAssets.collectionImageFor(champion.id),
-    );
-  }),
-);
-
 class CollectionPage extends StatefulWidget {
-  const CollectionPage({super.key});
+  const CollectionPage({
+    super.key,
+    required this.catalog,
+    required this.playerPreferences,
+  });
+
+  final ChampionCatalog catalog;
+  final PlayerPreferences playerPreferences;
 
   @override
   State<CollectionPage> createState() => _CollectionPageState();
 }
 
 class _CollectionPageState extends State<CollectionPage> {
-  final _playerPreferences = PlayerPreferences();
-
   Map<String, int> _championCounts = const {};
   Set<String> _discoveredChampionIds = const {};
   var _loading = true;
@@ -51,8 +39,10 @@ class _CollectionPageState extends State<CollectionPage> {
 
   Future<void> _loadCollection() async {
     try {
-      final counts = await _playerPreferences.getChampionCollectionCounts();
-      final discoveredIds = await _playerPreferences.getDiscoveredChampionIds();
+      final counts = await widget.playerPreferences
+          .getChampionCollectionCounts();
+      final discoveredIds = await widget.playerPreferences
+          .getDiscoveredChampionIds();
       if (!mounted) return;
       setState(() {
         _championCounts = counts;
@@ -74,8 +64,8 @@ class _CollectionPageState extends State<CollectionPage> {
     int copyCount, {
     required bool discovered,
   }) {
-    final preset = ChampionPresets.byId[champion.id];
-    if (preset == null) return;
+    final definition = widget.catalog.definitionById(champion.id);
+    if (definition == null) return;
 
     Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -85,7 +75,7 @@ class _CollectionPageState extends State<CollectionPage> {
         pageBuilder: (context, animation, secondaryAnimation) =>
             ChampionInfoPage(
               champion: champion,
-              preset: preset,
+              preset: definition,
               copyCount: copyCount,
               discovered: discovered,
             ),
@@ -154,10 +144,10 @@ class _CollectionPageState extends State<CollectionPage> {
                     final rowExtent =
                         cardHeight + (compact ? 27 : 36) + (compact ? 12 : 20);
                     final champions = [
-                      ..._collectionChampions.where(
+                      ...widget.catalog.champions.where(
                         (champion) => (_championCounts[champion.id] ?? 0) > 0,
                       ),
-                      ..._collectionChampions.where(
+                      ...widget.catalog.champions.where(
                         (champion) => (_championCounts[champion.id] ?? 0) == 0,
                       ),
                     ];

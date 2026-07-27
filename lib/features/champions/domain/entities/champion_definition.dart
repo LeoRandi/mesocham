@@ -1,10 +1,10 @@
 import 'battle_gesture.dart';
-import 'battle_status.dart';
 import 'champion.dart';
 import 'champion_move.dart';
+import 'status_effect.dart';
 
-class ChampionMovePreset {
-  const ChampionMovePreset({
+class ChampionMoveDefinition {
+  const ChampionMoveDefinition({
     required this.name,
     this.potency = 0,
     this.effectDescription,
@@ -25,8 +25,8 @@ class ChampionMovePreset {
   final bool dealsFullDamageOnDraw;
 }
 
-class ChampionPreset {
-  const ChampionPreset({
+class ChampionDefinition {
+  const ChampionDefinition({
     required this.id,
     required this.name,
     required this.scientificName,
@@ -54,5 +54,8 @@ class ChampionPreset {
   final String? family;
 
   /// Gesture-specific loadout supplied by the champion row, when present.
-  final Map<BattleGesture, ChampionMovePreset> moveOverrides;
+  final Map<BattleGesture, ChampionMoveDefinition> moveOverrides;
 }
+
+typedef ChampionMovePreset = ChampionMoveDefinition;
+typedef ChampionPreset = ChampionDefinition;

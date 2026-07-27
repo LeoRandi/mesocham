@@ -39,14 +39,17 @@ class PlayerPreferences {
     });
   }
 
-  Future<void> unlockChampion(String championId) async {
+  Future<void> unlockChampion(String championId, {int copies = 1}) async {
     final normalizedId = championId.trim();
     if (normalizedId.isEmpty) return;
+    if (copies < 1) {
+      throw ArgumentError.value(copies, 'copies', 'Must be at least one.');
+    }
 
     final counts = await getChampionCollectionCounts();
     if ((counts[normalizedId] ?? 0) > 0) return;
 
-    await saveChampionCollectionCounts({...counts, normalizedId: 1});
+    await saveChampionCollectionCounts({...counts, normalizedId: copies});
   }
 
   Future<Map<String, int>> getChampionCollectionCounts() async {

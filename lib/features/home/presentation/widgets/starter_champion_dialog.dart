@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/domain/entities/champion.dart';
-import '../../../battle/domain/entities/champion_preset.dart';
-import '../../../battle/presentation/widgets/champion_type_emblem.dart';
+import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/entities/champion_definition.dart';
+import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 
 class StarterChampionDialog extends StatelessWidget {
   const StarterChampionDialog({super.key, required this.champions})
     : assert(champions.length == 3);
 
-  final List<ChampionPreset> champions;
+  final List<ChampionDefinition> champions;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +113,7 @@ class _StarterChoiceCard extends StatefulWidget {
     required this.onSelected,
   });
 
-  final ChampionPreset champion;
+  final ChampionDefinition champion;
   final bool compact;
   final bool autofocus;
   final VoidCallback onSelected;

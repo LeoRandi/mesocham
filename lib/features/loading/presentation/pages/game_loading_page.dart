@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/data/champion_artwork_assets.dart';
-import '../../../battle/data/presets/champion_presets.dart';
-import '../../../battle/domain/entities/champion.dart';
-import '../../../battle/presentation/widgets/champion_type_emblem.dart';
+import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/repositories/champion_catalog.dart';
+import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 
 class GameLoadingPage extends StatefulWidget {
   const GameLoadingPage({
     super.key,
+    required this.catalog,
     required this.destinationRoute,
     this.retainedRouteName,
     this.minimumWaitDuration = const Duration(milliseconds: 500),
@@ -16,6 +16,7 @@ class GameLoadingPage extends StatefulWidget {
 
   // Route future loading flows through this screen so navigation only
   // continues after the destination's image assets have decoded successfully.
+  final ChampionCatalog catalog;
   final String destinationRoute;
   final String? retainedRouteName;
   final Duration minimumWaitDuration;
@@ -47,21 +48,15 @@ class _GameLoadingPageState extends State<GameLoadingPage>
     ];
 
     return switch (widget.destinationRoute) {
-      '/collection' => [
+      '/collection' || '/battle' => [
         ...typeEmblems,
-        for (final preset in ChampionPresets.all)
-          _DestinationImage(
-            ChampionArtworkAssets.collectionImageFor(preset.id),
-            cacheWidth: 256,
-          ),
-      ],
-      '/battle' => [
-        ...typeEmblems,
-        const _DestinationImage('assets/images/champion_emblems.png'),
-        const _DestinationImage('assets/dinos/ornitosuchus.png'),
-        const _DestinationImage(
-          'assets/dinos/closeUps/ornitosuchus-closeUp.png',
-        ),
+        if (widget.destinationRoute == '/battle')
+          const _DestinationImage('assets/images/champion_emblems.png'),
+        for (final champion in widget.catalog.champions) ...[
+          _DestinationImage(champion.imageAssetPath, cacheWidth: 256),
+          if (champion.closeUpAssetPath != null)
+            _DestinationImage(champion.closeUpAssetPath!, cacheWidth: 256),
+        ],
       ],
       _ => typeEmblems,
     };

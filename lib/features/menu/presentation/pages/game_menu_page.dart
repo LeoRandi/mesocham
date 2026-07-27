@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/data/presets/champion_presets.dart';
+import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../home/data/player_preferences.dart';
 import '../widgets/menu_backdrop.dart';
 
@@ -94,7 +94,14 @@ const _arenaModes = [
 enum _MenuLevel { main, arena }
 
 class GameMenuPage extends StatefulWidget {
-  const GameMenuPage({super.key});
+  const GameMenuPage({
+    super.key,
+    required this.catalog,
+    required this.playerPreferences,
+  });
+
+  final ChampionCatalog catalog;
+  final PlayerPreferences playerPreferences;
 
   @override
   State<GameMenuPage> createState() => _GameMenuPageState();
@@ -114,8 +121,6 @@ class _GameMenuPageState extends State<GameMenuPage> {
   var _launchingFossilRace = false;
   var _launchingCollection = false;
   var _grantingDebugCollection = false;
-  final _playerPreferences = PlayerPreferences();
-
   List<_MenuDestination> get _destinations => switch (_level) {
     _MenuLevel.main => _menuDestinations,
     _MenuLevel.arena => _arenaModes,
@@ -166,8 +171,8 @@ class _GameMenuPageState extends State<GameMenuPage> {
     setState(() => _grantingDebugCollection = true);
 
     try {
-      await _playerPreferences.saveChampionCollectionCounts({
-        for (final champion in ChampionPresets.all) champion.id: 3,
+      await widget.playerPreferences.saveChampionCollectionCounts({
+        for (final champion in widget.catalog.champions) champion.id: 3,
       });
       if (!mounted) return;
 

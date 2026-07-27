@@ -175,7 +175,7 @@ class _BattleActionState extends State<_BattleAction> {
                     Icon(
                       widget.icon,
                       color: color,
-                      size: widget.compact ? 15 : 21,
+                      size: widget.compact ? 15 : 22,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -185,9 +185,9 @@ class _BattleActionState extends State<_BattleAction> {
                       softWrap: false,
                       style: TextStyle(
                         color: color,
-                        fontSize: widget.compact ? 7 : 9,
+                        fontSize: widget.compact ? 7 : 10,
                         fontWeight: FontWeight.w900,
-                        letterSpacing: 0.4,
+                        letterSpacing: widget.compact ? 0.4 : 0.55,
                       ),
                     ),
                   ],

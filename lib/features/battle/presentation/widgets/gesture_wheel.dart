@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../champions/domain/entities/champion.dart';
 import '../../domain/entities/battle_gesture.dart';
-import '../../domain/entities/champion.dart';
 
 class GestureWheel extends StatelessWidget {
   const GestureWheel({

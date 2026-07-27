@@ -4,28 +4,43 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../data/demo_battle_factory.dart';
+import '../../../champions/domain/repositories/champion_catalog.dart';
+import '../../../champions/presentation/widgets/champion_card.dart';
+import '../../../home/data/player_preferences.dart';
+import '../../application/services/battle_session.dart';
+import '../../application/services/fossil_race_team_factory.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
 import '../../domain/entities/battle_status.dart';
+import '../../domain/entities/battle_team.dart';
 import '../../domain/entities/combatant.dart';
 import '../../domain/services/ai_move_strategy.dart';
 import '../../domain/services/battle_rules.dart';
 import '../controllers/battle_controller.dart';
 import '../widgets/battle_backdrop.dart';
 import '../widgets/battle_controls.dart';
-import '../widgets/champion_card.dart';
 import '../widgets/gesture_wheel.dart';
 
 class BattleRoomPage extends StatefulWidget {
-  const BattleRoomPage({super.key});
+  const BattleRoomPage({
+    super.key,
+    required this.catalog,
+    required this.playerPreferences,
+  });
+
+  final ChampionCatalog catalog;
+  final PlayerPreferences playerPreferences;
 
   @override
   State<BattleRoomPage> createState() => _BattleRoomPageState();
 }
 
 class _BattleRoomPageState extends State<BattleRoomPage> {
-  late final BattleController _controller;
+  static const _preResolutionDelay = Duration(milliseconds: 420);
+  static const _resultDisplayDuration = Duration(milliseconds: 1250);
+
+  BattleController? _controller;
+  Object? _loadError;
   final _battleActionFocusNodes = List.generate(
     4,
     (index) => FocusNode(debugLabel: 'Battle action ${index + 1}'),
@@ -45,51 +60,88 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   @override
   void initState() {
     super.initState();
-    _controller = BattleController(
-      playerTeam: DemoBattleFactory.playerTeam(),
-      opponentTeam: DemoBattleFactory.opponentTeam(),
-      rules: const StandardBattleRules(),
-      opponentStrategy: FossilRaceAiStrategy(),
-    );
+    _loadBattle();
+  }
+
+  Future<void> _loadBattle() async {
+    try {
+      final collection = await widget.playerPreferences
+          .getChampionCollectionCounts();
+      final teams = FossilRaceTeamFactory(
+        catalog: widget.catalog,
+      ).create(collection);
+      if (!mounted) return;
+
+      setState(() {
+        _loadError = null;
+        _controller = BattleController(
+          playerTeam: teams.playerTeam,
+          opponentTeam: teams.opponentTeam,
+          session: BattleSession(
+            rules: const StandardBattleRules(),
+            opponentStrategy: FossilRaceAiStrategy(),
+          ),
+        );
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _loadError = error);
+    }
   }
 
   void _startFight() {
-    _controller.startFight();
+    _controller?.startFight();
     _requestFocusAfterFrame(_moveFocusNodes.first);
   }
 
   Future<void> _showdown() async {
-    await _controller.showdown();
+    final controller = _controller;
+    if (controller == null || !controller.beginShowdown()) return;
+
+    await Future<void>.delayed(_preResolutionDelay);
     if (!mounted) return;
+    if (!controller.resolvePendingAction()) return;
+
+    await Future<void>.delayed(_resultDisplayDuration);
+    if (!mounted) return;
+    if (!controller.completeResolution()) return;
 
     _requestFocusAfterFrame(
-      _controller.phase == BattlePhase.gameOver
+      controller.phase == BattlePhase.gameOver
           ? _rematchFocusNode
           : _battleActionFocusNodes.first,
     );
   }
 
   void _resetBattle() {
-    _controller.resetBattle();
+    _controller?.resetBattle();
     _requestFocusAfterFrame(_battleActionFocusNodes.first);
   }
 
   void _startSwap() {
-    _controller.startSwap();
+    _controller?.startSwap();
     _requestFocusAfterFrame(_swapFocusNodes.first);
   }
 
   void _cancelSwap() {
-    _controller.cancelSwap();
+    _controller?.cancelSwap();
     _requestFocusAfterFrame(_battleActionFocusNodes.first);
   }
 
   Future<void> _swapPlayerTo(int index) async {
-    await _controller.swapPlayerTo(index);
+    final controller = _controller;
+    if (controller == null || !controller.beginSwap(index)) return;
+
+    await Future<void>.delayed(_preResolutionDelay);
     if (!mounted) return;
+    if (!controller.resolvePendingAction()) return;
+
+    await Future<void>.delayed(_resultDisplayDuration);
+    if (!mounted) return;
+    if (!controller.completeResolution()) return;
 
     _requestFocusAfterFrame(
-      _controller.phase == BattlePhase.gameOver
+      controller.phase == BattlePhase.gameOver
           ? _rematchFocusNode
           : _battleActionFocusNodes.first,
     );
@@ -103,11 +155,11 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     });
   }
 
-  List<FocusNode?> get _numberedFocusNodes => switch (_controller.phase) {
+  List<FocusNode?> get _numberedFocusNodes => switch (_controller!.phase) {
     BattlePhase.command => _battleActionFocusNodes,
     BattlePhase.choosingMove => [
       ..._moveFocusNodes,
-      if (_controller.canShowdown) _showdownFocusNode else null,
+      if (_controller!.canShowdown) _showdownFocusNode else null,
     ],
     BattlePhase.resolving => const [],
     BattlePhase.swapping => _swapFocusNodes,
@@ -116,7 +168,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     for (final focusNode in [
       ..._battleActionFocusNodes,
       ..._moveFocusNodes,
@@ -132,8 +184,31 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
 
   @override
   Widget build(BuildContext context) {
+    final controller = _controller;
+    if (controller == null) {
+      return Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const BattleBackdrop(),
+            Center(
+              child: _loadError == null
+                  ? const CircularProgressIndicator(color: AppColors.amber)
+                  : _BattleLoadError(
+                      onRetry: () {
+                        setState(() => _loadError = null);
+                        _loadBattle();
+                      },
+                      onExit: () => Navigator.of(context).pop(),
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return AnimatedBuilder(
-      animation: _controller,
+      animation: controller,
       builder: (context, child) {
         return Shortcuts(
           shortcuts: numberFocusShortcuts(_numberedFocusNodes),
@@ -149,7 +224,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                           constraints.maxHeight < 560 ||
                           constraints.maxWidth < 900;
                       return _BattleRoom(
-                        controller: _controller,
+                        controller: controller,
                         compact: compact,
                         battleActionFocusNodes: _battleActionFocusNodes,
                         moveFocusNodes: _moveFocusNodes,
@@ -173,6 +248,43 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class _BattleLoadError extends StatelessWidget {
+  const _BattleLoadError({required this.onRetry, required this.onExit});
+
+  final VoidCallback onRetry;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: AppColors.deepEarth,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Could not assemble a Fossil Race team.',
+              style: TextStyle(
+                color: AppColors.bone,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              children: [
+                OutlinedButton(onPressed: onExit, child: const Text('MENU')),
+                FilledButton(onPressed: onRetry, child: const Text('RETRY')),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -215,6 +327,7 @@ class _BattleRoom extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final overlayVisible = controller.isFightOverlayVisible;
+    final resolution = controller.lastResolution;
 
     return Stack(
       fit: StackFit.expand,
@@ -224,10 +337,11 @@ class _BattleRoom extends StatelessWidget {
           children: [
             Expanded(
               child: _ChampionZone(
-                combatant: controller.opponent,
-                reserveCardCount: controller.opponentTeam.swapIndexes.length,
+                team: controller.opponentTeam,
                 isOpponent: true,
                 compact: compact,
+                resolutionSequence: controller.resolutionSequence,
+                damagedIndexes: resolution?.damagedOpponentIndexes ?? const [],
                 showChampion: !overlayVisible,
                 fightEnabled: false,
                 swapEnabled: false,
@@ -236,23 +350,24 @@ class _BattleRoom extends StatelessWidget {
               ),
             ),
             Container(
-              height: compact ? 2 : 3,
+              height: compact ? 1 : 1.5,
               decoration: BoxDecoration(
-                color: AppColors.bone,
+                color: AppColors.sand.withValues(alpha: 0.62),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.amber.withValues(alpha: 0.48),
-                    blurRadius: 10,
+                    color: AppColors.amber.withValues(alpha: 0.24),
+                    blurRadius: 6,
                   ),
                 ],
               ),
             ),
             Expanded(
               child: _ChampionZone(
-                combatant: controller.player,
-                reserveCardCount: controller.playerSwapIndexes.length,
+                team: controller.playerTeam,
                 isOpponent: false,
                 compact: compact,
+                resolutionSequence: controller.resolutionSequence,
+                damagedIndexes: resolution?.damagedPlayerIndexes ?? const [],
                 showChampion: !overlayVisible,
                 fightEnabled: controller.phase == BattlePhase.command,
                 swapEnabled: controller.canSwap,
@@ -333,10 +448,11 @@ class _BattleRoom extends StatelessWidget {
 
 class _ChampionZone extends StatelessWidget {
   const _ChampionZone({
-    required this.combatant,
-    required this.reserveCardCount,
+    required this.team,
     required this.isOpponent,
     required this.compact,
+    required this.resolutionSequence,
+    required this.damagedIndexes,
     required this.showChampion,
     required this.fightEnabled,
     required this.swapEnabled,
@@ -346,10 +462,11 @@ class _ChampionZone extends StatelessWidget {
     this.canFocusBattleActions = false,
   }) : assert(isOpponent || battleActionFocusNodes?.length == 4);
 
-  final Combatant combatant;
-  final int reserveCardCount;
+  final BattleTeam team;
   final bool isOpponent;
   final bool compact;
+  final int resolutionSequence;
+  final List<int> damagedIndexes;
   final bool showChampion;
   final bool fightEnabled;
   final bool swapEnabled;
@@ -360,83 +477,121 @@ class _ChampionZone extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final combatant = team.active;
+    final activeDamageTrigger = damagedIndexes.contains(team.activeIndex)
+        ? resolutionSequence
+        : 0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final controlsHeight = compact ? 48.0 : 64.0;
+        final controlsInset = compact ? 52.0 : 78.0;
         final availableForCard =
-            constraints.maxHeight -
-            (isOpponent ? (compact ? 42 : 52) : controlsHeight + 30);
+            constraints.maxHeight - controlsInset - (compact ? 28 : 44);
         final cardHeight = math
             .max(
               compact ? 68.0 : 100.0,
-              math.min(compact ? 100.0 : 158.0, availableForCard),
+              math.min(compact ? 108.0 : 220.0, availableForCard),
             )
             .toDouble();
-        final showReserves = constraints.maxWidth > 620;
+        final horizontalPadding = compact ? 12.0 : 48.0;
+        final formationWidth = math.min(
+          1240.0,
+          math.max(0, constraints.maxWidth - horizontalPadding * 2),
+        );
+        final columnWidth = formationWidth / 3;
+        final cardGap = compact ? 4.0 : 7.0;
+        final targetMiniCardHeight = cardHeight * (compact ? 0.42 : 0.4);
+        final maxMiniCardHeight =
+            (columnWidth - cardGap * 2 - (compact ? 8 : 20)) / (3 * 0.7);
+        final miniCardHeight = math
+            .max(
+              compact ? 32.0 : 52.0,
+              math.min(targetMiniCardHeight, maxMiniCardHeight),
+            )
+            .toDouble();
+        final accent = isOpponent ? AppColors.danger : AppColors.teal;
 
         return Stack(
           children: [
-            if (showReserves)
-              Align(
-                alignment: isOpponent
-                    ? const Alignment(-0.78, -0.02)
-                    : const Alignment(-0.78, 0.02),
-                child: _ReserveStrip(
-                  label: isOpponent ? 'RIVAL DECK' : 'SPECIES CARDS',
-                  compact: compact,
-                ),
-              ),
-            if (showReserves)
-              Align(
-                alignment: isOpponent
-                    ? const Alignment(0.78, -0.02)
-                    : const Alignment(0.78, 0.02),
-                child: _ReserveStrip(
-                  label: isOpponent ? 'DEFEATED' : 'RESERVE',
-                  compact: compact,
-                  cardCount: reserveCardCount,
-                ),
-              ),
             Padding(
               padding: EdgeInsets.only(
-                top: isOpponent ? (compact ? 6 : 10) : 0,
-                bottom: isOpponent ? 0 : controlsHeight,
+                top: isOpponent ? controlsInset : 0,
+                bottom: isOpponent ? 0 : controlsInset,
+                left: horizontalPadding,
+                right: horizontalPadding,
               ),
               child: Center(
-                child: AnimatedOpacity(
-                  opacity: showChampion ? 1 : 0,
-                  duration: const Duration(milliseconds: 360),
-                  curve: Curves.easeOut,
-                  child: AnimatedScale(
-                    scale: showChampion ? 1 : 0.38,
-                    duration: const Duration(milliseconds: 430),
-                    curve: Curves.easeInBack,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          isOpponent ? 'RIVAL CHAMPION' : 'YOUR CHAMPION',
-                          style: TextStyle(
-                            color: isOpponent
-                                ? AppColors.danger
-                                : AppColors.teal,
-                            fontSize: compact ? 8 : 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.3,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1240),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: _TeamCardGroup(
+                          label: 'SPECIES CARDS',
+                          compact: compact,
+                          cardHeight: miniCardHeight,
+                          cardGap: cardGap,
+                          cardCount: 3,
+                        ),
+                      ),
+                      Expanded(
+                        child: AnimatedOpacity(
+                          opacity: showChampion ? 1 : 0,
+                          duration: const Duration(milliseconds: 360),
+                          curve: Curves.easeOut,
+                          child: AnimatedScale(
+                            scale: showChampion ? 1 : 0.38,
+                            duration: const Duration(milliseconds: 430),
+                            curve: Curves.easeInBack,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isOpponent
+                                      ? 'RIVAL ACTIVE CHAMPION'
+                                      : 'YOUR ACTIVE CHAMPION',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.fade,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: compact ? 8 : 11,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: compact ? 0.8 : 1.15,
+                                  ),
+                                ),
+                                SizedBox(height: compact ? 3 : 6),
+                                ChampionCard(
+                                  champion: combatant.champion,
+                                  height: cardHeight,
+                                  currentHealth: combatant.currentHealth,
+                                  maximumHealth: combatant.maxHealth,
+                                  defeated: combatant.isDefeated,
+                                  damageTrigger: activeDamageTrigger,
+                                ),
+                                SizedBox(height: compact ? 2 : 4),
+                                _StatusStrip(
+                                  combatant: combatant,
+                                  compact: compact,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        SizedBox(height: compact ? 2 : 4),
-                        ChampionCard(
-                          champion: combatant.champion,
-                          height: cardHeight,
-                          currentHealth: combatant.currentHealth,
-                          maximumHealth: combatant.maxHealth,
-                          defeated: combatant.isDefeated,
+                      ),
+                      Expanded(
+                        child: _TeamCardGroup(
+                          label: 'RESERVE',
+                          compact: compact,
+                          cardHeight: miniCardHeight,
+                          cardGap: cardGap,
+                          team: team,
+                          resolutionSequence: resolutionSequence,
+                          damagedIndexes: damagedIndexes,
                         ),
-                        SizedBox(height: compact ? 2 : 4),
-                        _StatusStrip(combatant: combatant, compact: compact),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -448,7 +603,7 @@ class _ChampionZone extends StatelessWidget {
                   padding: EdgeInsets.only(
                     left: compact ? 100 : 180,
                     right: compact ? 100 : 180,
-                    bottom: compact ? 3 : 6,
+                    bottom: compact ? 7 : 14,
                   ),
                   child: BattleControls(
                     onFight: onFight,
@@ -468,42 +623,97 @@ class _ChampionZone extends StatelessWidget {
   }
 }
 
-class _ReserveStrip extends StatelessWidget {
-  const _ReserveStrip({
+class _TeamCardGroup extends StatelessWidget {
+  const _TeamCardGroup({
     required this.label,
     required this.compact,
-    this.cardCount = 3,
+    required this.cardHeight,
+    required this.cardGap,
+    this.cardCount = 0,
+    this.team,
+    this.resolutionSequence = 0,
+    this.damagedIndexes = const [],
   });
 
   final String label;
   final bool compact;
+  final double cardHeight;
+  final double cardGap;
   final int cardCount;
+  final BattleTeam? team;
+  final int resolutionSequence;
+  final List<int> damagedIndexes;
 
   @override
   Widget build(BuildContext context) {
-    final cardSize = compact ? 37.0 : 53.0;
+    final reserveIndexes = team == null
+        ? const <int>[]
+        : [
+            for (var index = 0; index < team!.combatants.length; index++)
+              if (index != team!.activeIndex) index,
+          ];
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           label,
           style: TextStyle(
-            color: AppColors.sand.withValues(alpha: 0.64),
-            fontSize: compact ? 7 : 9,
+            color: AppColors.bone.withValues(alpha: 0.86),
+            fontSize: compact ? 7.5 : 10,
             fontWeight: FontWeight.w900,
-            letterSpacing: 0.8,
+            letterSpacing: compact ? 0.65 : 0.95,
+            shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
           ),
         ),
-        SizedBox(height: compact ? 3 : 6),
+        SizedBox(height: compact ? 4 : 8),
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
-          children: List.generate(
-            cardCount,
-            (index) => Padding(
-              padding: EdgeInsets.only(left: index == 0 ? 0 : 4),
-              child: MiniChampionCard(size: cardSize),
-            ),
-          ),
+          children: [
+            if (team == null)
+              for (var index = 0; index < cardCount; index++)
+                Padding(
+                  padding: EdgeInsets.only(left: index == 0 ? 0 : cardGap),
+                  child: MiniChampionCard(size: cardHeight),
+                )
+            else
+              for (
+                var position = 0;
+                position < reserveIndexes.length;
+                position++
+              )
+                Padding(
+                  padding: EdgeInsets.only(left: position == 0 ? 0 : cardGap),
+                  child: MiniChampionCard.combatant(
+                    key: ValueKey(
+                      '${team!.activeIndex}-${reserveIndexes[position]}',
+                    ),
+                    size: cardHeight,
+                    imageAssetPath:
+                        team!
+                            .combatants[reserveIndexes[position]]
+                            .champion
+                            .closeUpAssetPath ??
+                        team!
+                            .combatants[reserveIndexes[position]]
+                            .champion
+                            .imageAssetPath,
+                    currentHealth: team!
+                        .combatants[reserveIndexes[position]]
+                        .currentHealth,
+                    maximumHealth:
+                        team!.combatants[reserveIndexes[position]].maxHealth,
+                    defeated:
+                        team!.combatants[reserveIndexes[position]].isDefeated,
+                    obscured: false,
+                    damageTrigger:
+                        damagedIndexes.contains(reserveIndexes[position])
+                        ? resolutionSequence
+                        : 0,
+                  ),
+                ),
+          ],
         ),
       ],
     );

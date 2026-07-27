@@ -2,22 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_colors.dart';
-import '../../../battle/data/presets/champion_presets.dart';
-import '../../../battle/domain/entities/champion.dart';
-import '../../../battle/domain/entities/champion_preset.dart';
-import '../../../battle/presentation/widgets/champion_type_emblem.dart';
+import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/entities/champion_definition.dart';
+import '../../../champions/domain/repositories/champion_catalog.dart';
+import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 import '../../data/player_preferences.dart';
 import '../widgets/home_backdrop.dart';
 import '../widgets/starter_champion_dialog.dart';
 
-final List<ChampionPreset> _starterChampions = List.unmodifiable([
-  ChampionPresets.byId['ornithosuchus']!,
-  ChampionPresets.byId['protoceratops']!,
-  ChampionPresets.byId['utahraptor']!,
-]);
+const _starterChampionIds = ['ornithosuchus', 'protoceratops', 'utahraptor'];
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({
+    super.key,
+    required this.catalog,
+    required this.playerPreferences,
+  });
+
+  final ChampionCatalog catalog;
+  final PlayerPreferences playerPreferences;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -33,17 +36,19 @@ class _HomePageState extends State<HomePage>
     parent: _promptController,
     curve: Curves.easeInOut,
   );
-  final _playerPreferences = PlayerPreferences();
-
   var _openingMenu = false;
+
+  List<ChampionDefinition> get _starterChampions => [
+    for (final id in _starterChampionIds) widget.catalog.definitionById(id)!,
+  ];
 
   Future<void> _openMenu() async {
     if (_openingMenu) return;
     _openingMenu = true;
 
     try {
-      final savedPlayerName = await _playerPreferences.getPlayerName();
-      final unlockedChampionIds = await _playerPreferences
+      final savedPlayerName = await widget.playerPreferences.getPlayerName();
+      final unlockedChampionIds = await widget.playerPreferences
           .getUnlockedChampionIds();
       if (!mounted) return;
 
@@ -60,7 +65,7 @@ class _HomePageState extends State<HomePage>
           _openingMenu = false;
           return;
         }
-        await _playerPreferences.savePlayerName(playerName);
+        await widget.playerPreferences.savePlayerName(playerName);
         if (!mounted) return;
       }
 
@@ -78,7 +83,10 @@ class _HomePageState extends State<HomePage>
           _openingMenu = false;
           return;
         }
-        await _playerPreferences.unlockChampion(starterChampionId);
+        await widget.playerPreferences.unlockChampion(
+          starterChampionId,
+          copies: 3,
+        );
         if (!mounted) return;
       }
 

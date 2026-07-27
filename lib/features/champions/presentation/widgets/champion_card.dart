@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/champion.dart';
 import 'champion_type_emblem.dart';
+import 'damage_shake.dart';
 
 class ChampionCard extends StatelessWidget {
   const ChampionCard({
@@ -14,6 +17,7 @@ class ChampionCard extends StatelessWidget {
     this.defeated = false,
     this.portraitFit = BoxFit.fitWidth,
     this.obscured = false,
+    this.damageTrigger = 0,
   }) : unlocked = true,
        _use = _ChampionCardUse.battle;
 
@@ -27,6 +31,7 @@ class ChampionCard extends StatelessWidget {
        defeated = false,
        portraitFit = BoxFit.cover,
        obscured = false,
+       damageTrigger = 0,
        _use = _ChampionCardUse.collection;
 
   static const aspectRatio = 319 / 502;
@@ -41,6 +46,7 @@ class ChampionCard extends StatelessWidget {
   final bool unlocked;
   final BoxFit portraitFit;
   final bool obscured;
+  final int damageTrigger;
   final _ChampionCardUse _use;
 
   @override
@@ -144,10 +150,24 @@ class ChampionCard extends StatelessWidget {
                     ),
                     SizedBox(width: (compact ? 3 : 5) * detailScale),
                     Expanded(
-                      child: _MarqueeText(
-                        text: obscured ? '???' : champion.name,
-                        style: nameStyle,
-                      ),
+                      child: compact
+                          ? _MarqueeText(
+                              text: obscured ? '???' : champion.name,
+                              style: nameStyle,
+                            )
+                          : Align(
+                              alignment: Alignment.centerLeft,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  obscured ? '???' : champion.name,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: nameStyle,
+                                ),
+                              ),
+                            ),
                     ),
                   ],
                 ),
@@ -193,6 +213,7 @@ class ChampionCard extends StatelessWidget {
                 compact: compact,
                 scale: detailScale,
                 obscured: obscured,
+                damageTrigger: damageTrigger,
               ),
             ],
           ),
@@ -352,12 +373,6 @@ class _ChampionPortrait extends StatelessWidget {
   Widget build(BuildContext context) {
     final imageAssetPath = champion.closeUpAssetPath ?? champion.imageAssetPath;
 
-    if (imageAssetPath == null) {
-      return Center(
-        child: ChampionTypeEmblem(type: champion.type, size: fallbackSize),
-      );
-    }
-
     return Image.asset(
       imageAssetPath,
       width: double.infinity,
@@ -471,6 +486,7 @@ class _CardHealthBar extends StatelessWidget {
     required this.compact,
     required this.scale,
     required this.obscured,
+    required this.damageTrigger,
   });
 
   final double current;
@@ -478,6 +494,7 @@ class _CardHealthBar extends StatelessWidget {
   final bool compact;
   final double scale;
   final bool obscured;
+  final int damageTrigger;
 
   @override
   Widget build(BuildContext context) {
@@ -488,54 +505,60 @@ class _CardHealthBar extends StatelessWidget {
     final maximumLabel = _formatHealth(maximum);
     final barHeight = (compact ? 9.0 : 14.0) * scale;
 
-    return Semantics(
-      label: obscured
-          ? 'Unknown health points'
-          : '$currentLabel of $maximumLabel health points',
-      child: Container(
-        height: barHeight,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: const Color(0xFF321510),
-          borderRadius: BorderRadius.circular((compact ? 1.5 : 2.5) * scale),
-          border: Border.all(
-            color: AppColors.ink,
-            width: (compact ? 0.8 : 1.2) * scale,
+    return DamageShake(
+      trigger: damageTrigger,
+      distance: (compact ? 2.5 : 4) * scale,
+      child: Semantics(
+        label: obscured
+            ? 'Unknown health points'
+            : '$currentLabel of $maximumLabel health points',
+        child: Container(
+          height: barHeight,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: const Color(0xFF321510),
+            borderRadius: BorderRadius.circular((compact ? 1.5 : 2.5) * scale),
+            border: Border.all(
+              color: AppColors.ink,
+              width: (compact ? 0.8 : 1.2) * scale,
+            ),
           ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            TweenAnimationBuilder<double>(
-              tween: Tween(end: target),
-              duration: const Duration(milliseconds: 650),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, child) => FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: value,
-                child: const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF21B94D), AppColors.health],
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: target),
+                duration: const Duration(milliseconds: 650),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) => FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: value,
+                  child: const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF21B94D), AppColors.health],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Center(
-              child: Text(
-                obscured ? '???' : '$currentLabel / $maximumLabel',
-                maxLines: 1,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: (compact ? 5.5 : 8) * scale,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                  shadows: [Shadow(color: Colors.black, blurRadius: 2 * scale)],
+              Center(
+                child: Text(
+                  obscured ? '???' : '$currentLabel / $maximumLabel',
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: (compact ? 5.5 : 8) * scale,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(color: Colors.black, blurRadius: 2 * scale),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -567,21 +590,17 @@ class ChampionEmblem extends StatelessWidget {
                 ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
                 : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
             child: imageAssetPath == null
-                ? ClipRect(
-                    child: OverflowBox(
-                      alignment: Alignment.topLeft,
-                      minWidth: 0,
-                      minHeight: 0,
-                      maxWidth: double.infinity,
-                      maxHeight: double.infinity,
-                      child: SizedBox(
-                        width: size * (1448 / 520),
-                        height: size * (2048 / 520),
-                        child: Image.asset(
-                          'assets/images/champion_emblems.png',
-                          fit: BoxFit.fill,
-                          filterQuality: FilterQuality.medium,
-                        ),
+                ? DecoratedBox(
+                    decoration: const BoxDecoration(
+                      gradient: RadialGradient(
+                        colors: [Color(0xFFB86F49), AppColors.deepEarth],
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.question_mark_rounded,
+                        size: size * 0.46,
+                        color: AppColors.bone,
                       ),
                     ),
                   )
@@ -600,24 +619,176 @@ class ChampionEmblem extends StatelessWidget {
 }
 
 class MiniChampionCard extends StatelessWidget {
-  const MiniChampionCard({super.key, required this.size});
+  const MiniChampionCard({super.key, required this.size})
+    : imageAssetPath = null,
+      currentHealth = 0,
+      maximumHealth = 0,
+      defeated = false,
+      obscured = true,
+      damageTrigger = 0,
+      _showHealth = false;
+
+  const MiniChampionCard.combatant({
+    super.key,
+    required this.size,
+    required this.imageAssetPath,
+    required this.currentHealth,
+    required this.maximumHealth,
+    required this.defeated,
+    required this.obscured,
+    required this.damageTrigger,
+  }) : _showHealth = true;
 
   final double size;
+  final String? imageAssetPath;
+  final double currentHealth;
+  final double maximumHealth;
+  final bool defeated;
+  final bool obscured;
+  final int damageTrigger;
+  final bool _showHealth;
 
   @override
   Widget build(BuildContext context) {
+    final healthScale = (size / 53).clamp(0.72, 1.25).toDouble();
+
     return Container(
       width: size * 0.7,
       height: size,
       decoration: BoxDecoration(
-        color: AppColors.earth,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: AppColors.sand.withValues(alpha: 0.65)),
+        color: AppColors.deepEarth,
+        borderRadius: BorderRadius.circular(size * 0.09),
+        border: Border.all(
+          color: AppColors.sand.withValues(alpha: 0.72),
+          width: math.max(1, size * 0.018),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: size * 0.1,
+            offset: Offset(0, size * 0.045),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.all(3),
-      child: const Center(
-        child: AspectRatio(aspectRatio: 1, child: ChampionEmblem()),
+      padding: EdgeInsets.all(math.max(2.5, size * 0.055)),
+      child: Column(
+        children: [
+          Expanded(
+            child: obscured
+                ? _ChampionCardBack(defeated: defeated)
+                : Center(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: ChampionEmblem(
+                        imageAssetPath: imageAssetPath,
+                        defeated: defeated,
+                      ),
+                    ),
+                  ),
+          ),
+          if (_showHealth) ...[
+            SizedBox(height: math.max(2, size * 0.035)),
+            _CardHealthBar(
+              current: currentHealth,
+              maximum: maximumHealth,
+              compact: true,
+              scale: healthScale,
+              obscured: false,
+              damageTrigger: damageTrigger,
+            ),
+          ],
+        ],
       ),
     );
   }
+}
+
+class _ChampionCardBack extends StatelessWidget {
+  const _ChampionCardBack({required this.defeated});
+
+  final bool defeated;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: ColorFiltered(
+        colorFilter: defeated
+            ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
+            : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF9A5134), Color(0xFF4B251A), Color(0xFF251611)],
+            ),
+            border: Border.all(color: AppColors.amber.withValues(alpha: 0.72)),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CustomPaint(painter: _CardBackPatternPainter()),
+              Center(
+                child: FractionallySizedBox(
+                  widthFactor: 0.58,
+                  heightFactor: 0.58,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppColors.ink.withValues(alpha: 0.78),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.sand.withValues(alpha: 0.82),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          blurRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: FittedBox(
+                        child: Padding(
+                          padding: EdgeInsets.all(5),
+                          child: Text(
+                            'M',
+                            style: TextStyle(
+                              color: AppColors.amber,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CardBackPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.sand.withValues(alpha: 0.13)
+      ..strokeWidth = math.max(0.7, size.shortestSide * 0.035);
+    final spacing = math.max(7.0, size.shortestSide * 0.28);
+
+    for (var offset = -size.height; offset < size.width; offset += spacing) {
+      canvas.drawLine(
+        Offset(offset, size.height),
+        Offset(offset + size.height, 0),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
