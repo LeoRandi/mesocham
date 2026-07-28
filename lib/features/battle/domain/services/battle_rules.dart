@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../../champions/domain/entities/champion_move.dart';
 import '../../../companions/domain/entities/companion.dart';
 import '../../../species_cards/domain/entities/species_card.dart';
+import '../entities/battle_effect_event.dart';
 import '../entities/battle_gesture.dart';
 import '../entities/battle_resolution.dart';
 import '../entities/battle_status.dart';
@@ -194,10 +195,90 @@ class StandardBattleRules implements BattleRules {
           opponentApplication.swapped ||
           playerApplication.targetSwapped ||
           nextOpponentTeam.activeIndex != originalOpponentTeam.activeIndex,
+      effectEvents: [
+        ..._resolvedEffectEvents(
+          playerApplication.effectEvents,
+          userSide: BattleSide.player,
+        ),
+        ..._resolvedEffectEvents(
+          opponentApplication.effectEvents,
+          userSide: BattleSide.opponent,
+        ),
+        for (final event in playerEndTurn.effectEvents)
+          BattleEffectEvent(
+            side: BattleSide.player,
+            combatantIndex: event.combatantIndex,
+            type: event.type,
+            amount: event.amount,
+          ),
+        for (final event in opponentEndTurn.effectEvents)
+          BattleEffectEvent(
+            side: BattleSide.opponent,
+            combatantIndex: event.combatantIndex,
+            type: event.type,
+            amount: event.amount,
+          ),
+      ],
     );
   }
 
-  ({BattleTeam team, double healing}) _finishTurn(BattleTeam team) {
+  List<BattleEffectEvent> _resolvedEffectEvents(
+    List<_ApplicationEffectEvent> events, {
+    required BattleSide userSide,
+  }) {
+    final targetSide = userSide == BattleSide.player
+        ? BattleSide.opponent
+        : BattleSide.player;
+    return [
+      for (final event in events)
+        BattleEffectEvent(
+          side: event.targetsUser ? userSide : targetSide,
+          combatantIndex: event.combatantIndex,
+          type: event.type,
+          amount: event.amount,
+        ),
+    ];
+  }
+
+  ({BattleTeam team, double healing, List<_EndTurnEffectEvent> effectEvents})
+  _finishTurn(BattleTeam team) {
+    final effectEvents = <_EndTurnEffectEvent>[];
+    for (var index = 0; index < team.combatants.length; index++) {
+      var combatant = team.combatants[index];
+      for (final status in combatant.statuses) {
+        if (status.justApplied) continue;
+        if (status.type == StatusType.bleeding) {
+          final damaged = combatant.takeDamage(
+            combatant.maxHealth * 0.05 * status.stacks,
+          );
+          final damage = combatant.currentHealth - damaged.currentHealth;
+          if (damage > 0) {
+            effectEvents.add(
+              _EndTurnEffectEvent(
+                combatantIndex: index,
+                type: BattleEffectType.bleedingDamage,
+                amount: damage,
+              ),
+            );
+          }
+          combatant = damaged;
+        } else if (status.type == StatusType.famine) {
+          final reduced = combatant.reduceMaxHealth(10.0 * status.stacks);
+          final lostMaxHealth = combatant.maxHealth - reduced.maxHealth;
+          if (lostMaxHealth > 0) {
+            effectEvents.add(
+              _EndTurnEffectEvent(
+                combatantIndex: index,
+                type: BattleEffectType.famineMaxHealthLoss,
+                amount: lostMaxHealth,
+              ),
+            );
+          }
+          combatant = reduced;
+        }
+      }
+    }
+
     var nextTeam = team.tickStatuses();
     var healing = 0.0;
     final active = nextTeam.active;
@@ -207,9 +288,22 @@ class StandardBattleRules implements BattleRules {
       final healthBeforeRegeneration = active.currentHealth;
       nextTeam = nextTeam.healActive(active.maxHealth * 0.08);
       healing = nextTeam.active.currentHealth - healthBeforeRegeneration;
+      if (healing > 0) {
+        effectEvents.add(
+          _EndTurnEffectEvent(
+            combatantIndex: nextTeam.activeIndex,
+            type: BattleEffectType.healing,
+            amount: healing,
+          ),
+        );
+      }
     }
 
-    return (team: nextTeam.promoteIfActiveDefeated(), healing: healing);
+    return (
+      team: nextTeam.promoteIfActiveDefeated(),
+      healing: healing,
+      effectEvents: effectEvents,
+    );
   }
 
   List<int> _damagedIndexes({
@@ -255,6 +349,7 @@ class StandardBattleRules implements BattleRules {
         healing: aggregate.healing + application.healing,
         swapped: aggregate.swapped || application.swapped,
         targetSwapped: aggregate.targetSwapped || application.targetSwapped,
+        effectEvents: [...aggregate.effectEvents, ...application.effectEvents],
       );
     }
 
@@ -371,12 +466,21 @@ class StandardBattleRules implements BattleRules {
       if (move.selfHealing > 0) {
         final healthBeforeHealing = application.userTeam.active.currentHealth;
         final healedTeam = application.userTeam.healActive(move.selfHealing);
+        final actualHealing =
+            healedTeam.active.currentHealth - healthBeforeHealing;
         application = application.copyWith(
           userTeam: healedTeam,
-          healing:
-              application.healing +
-              healedTeam.active.currentHealth -
-              healthBeforeHealing,
+          healing: application.healing + actualHealing,
+          effectEvents: [
+            ...application.effectEvents,
+            if (actualHealing > 0)
+              _ApplicationEffectEvent(
+                targetsUser: true,
+                combatantIndex: application.userTeam.activeIndex,
+                type: BattleEffectType.healing,
+                amount: actualHealing,
+              ),
+          ],
         );
       }
       if (move.cleansesHarmfulStatuses) {
@@ -385,8 +489,22 @@ class StandardBattleRules implements BattleRules {
         );
       }
       if (move.selfDamage > 0) {
+        final healthBeforeDamage = application.userTeam.active.currentHealth;
+        final damagedTeam = application.userTeam.damageActive(move.selfDamage);
+        final actualDamage =
+            healthBeforeDamage - damagedTeam.active.currentHealth;
         application = application.copyWith(
-          userTeam: application.userTeam.damageActive(move.selfDamage),
+          userTeam: damagedTeam,
+          effectEvents: [
+            ...application.effectEvents,
+            if (actualDamage > 0)
+              _ApplicationEffectEvent(
+                targetsUser: true,
+                combatantIndex: application.userTeam.activeIndex,
+                type: BattleEffectType.selfDamage,
+                amount: actualDamage,
+              ),
+          ],
         );
       }
     }
@@ -451,10 +569,23 @@ class StandardBattleRules implements BattleRules {
       potency,
       isCritical,
     );
-    final healing = damageApplication.activeDamage / 2;
+    final requestedHealing = damageApplication.activeDamage / 2;
+    final healthBeforeHealing = damageApplication.userTeam.active.currentHealth;
+    final healedTeam = damageApplication.userTeam.healActive(requestedHealing);
+    final healing = healedTeam.active.currentHealth - healthBeforeHealing;
     return damageApplication.copyWith(
-      userTeam: damageApplication.userTeam.healActive(healing),
+      userTeam: healedTeam,
       healing: healing,
+      effectEvents: [
+        ...damageApplication.effectEvents,
+        if (healing > 0)
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: damageApplication.userTeam.activeIndex,
+            type: BattleEffectType.healing,
+            amount: healing,
+          ),
+      ],
     );
   }
 
@@ -463,10 +594,22 @@ class StandardBattleRules implements BattleRules {
     BattleTeam targetTeam,
     double potency,
   ) {
+    final healthBeforeHealing = userTeam.active.currentHealth;
+    final healedTeam = userTeam.healActive(potency);
+    final healing = healedTeam.active.currentHealth - healthBeforeHealing;
     return _MoveApplication(
-      userTeam: userTeam.healActive(potency),
+      userTeam: healedTeam,
       targetTeam: targetTeam,
-      healing: potency,
+      healing: healing,
+      effectEvents: [
+        if (healing > 0)
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: userTeam.activeIndex,
+            type: BattleEffectType.healing,
+            amount: healing,
+          ),
+      ],
     );
   }
 
@@ -475,10 +618,31 @@ class StandardBattleRules implements BattleRules {
     BattleTeam targetTeam,
     double potency,
   ) {
+    var healedTeam = userTeam;
+    var healing = 0.0;
+    final effectEvents = <_ApplicationEffectEvent>[];
+    for (var index = 0; index < userTeam.combatants.length; index++) {
+      final healthBeforeHealing = healedTeam.combatants[index].currentHealth;
+      healedTeam = healedTeam.healCombatant(index, potency);
+      final actualHealing =
+          healedTeam.combatants[index].currentHealth - healthBeforeHealing;
+      healing += actualHealing;
+      if (actualHealing > 0) {
+        effectEvents.add(
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: index,
+            type: BattleEffectType.healing,
+            amount: actualHealing,
+          ),
+        );
+      }
+    }
     return _MoveApplication(
-      userTeam: userTeam.healAll(potency),
+      userTeam: healedTeam,
       targetTeam: targetTeam,
-      healing: potency,
+      healing: healing,
+      effectEvents: effectEvents,
     );
   }
 
@@ -492,6 +656,7 @@ class StandardBattleRules implements BattleRules {
     var nextTargetTeam = targetTeam;
     var activeDamage = 0.0;
     var reserveDamage = 0.0;
+    final effectEvents = <_ApplicationEffectEvent>[];
 
     for (var index = 0; index < targetTeam.combatants.length; index++) {
       final application = _damageTarget(
@@ -505,6 +670,7 @@ class StandardBattleRules implements BattleRules {
       nextTargetTeam = application.targetTeam;
       activeDamage += application.activeDamage;
       reserveDamage += application.reserveDamage;
+      effectEvents.addAll(application.effectEvents);
     }
 
     return _MoveApplication(
@@ -512,6 +678,7 @@ class StandardBattleRules implements BattleRules {
       targetTeam: nextTargetTeam,
       activeDamage: activeDamage,
       reserveDamage: reserveDamage,
+      effectEvents: effectEvents,
     );
   }
 
@@ -597,10 +764,23 @@ class StandardBattleRules implements BattleRules {
       potency,
       isCritical,
     );
+    final healthBeforeRecoil = damageApplication.userTeam.active.currentHealth;
+    final recoiledTeam = damageApplication.userTeam.damageActive(
+      damageApplication.activeDamage / 3,
+    );
+    final recoilDamage = healthBeforeRecoil - recoiledTeam.active.currentHealth;
     return damageApplication.copyWith(
-      userTeam: damageApplication.userTeam.damageActive(
-        damageApplication.activeDamage / 3,
-      ),
+      userTeam: recoiledTeam,
+      effectEvents: [
+        ...damageApplication.effectEvents,
+        if (recoilDamage > 0)
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: damageApplication.userTeam.activeIndex,
+            type: BattleEffectType.recoilDamage,
+            amount: recoilDamage,
+          ),
+      ],
     );
   }
 
@@ -631,14 +811,18 @@ class StandardBattleRules implements BattleRules {
       damagedTarget,
     );
 
+    var reflectedDamage = 0.0;
     if (actualDamage > 0 && target.hasStatus(StatusType.jaggedScales)) {
       final henodusCopies = target.companionCount(Companion.henodus);
       final reflectedFraction = henodusCopies > 0
-          ? 0.3 * henodusCopies * target.companionEffectMultiplier
-          : 0.3;
+          ? 0.33 * henodusCopies * target.companionEffectMultiplier
+          : 0.33;
+      final attackerHealthBeforeReflection = nextUserTeam.active.currentHealth;
       nextUserTeam = nextUserTeam.damageActive(
         actualDamage * reflectedFraction,
       );
+      reflectedDamage =
+          attackerHealthBeforeReflection - nextUserTeam.active.currentHealth;
     }
 
     return _MoveApplication(
@@ -646,6 +830,22 @@ class StandardBattleRules implements BattleRules {
       targetTeam: nextTargetTeam,
       activeDamage: targetIndex == targetTeam.activeIndex ? actualDamage : 0,
       reserveDamage: targetIndex == targetTeam.activeIndex ? 0 : actualDamage,
+      effectEvents: [
+        if (actualDamage > 0)
+          _ApplicationEffectEvent(
+            targetsUser: false,
+            combatantIndex: targetIndex,
+            type: BattleEffectType.combatDamage,
+            amount: actualDamage,
+          ),
+        if (reflectedDamage > 0)
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: userTeam.activeIndex,
+            type: BattleEffectType.jaggedScalesDamage,
+            amount: reflectedDamage,
+          ),
+      ],
     );
   }
 
@@ -761,12 +961,21 @@ class StandardBattleRules implements BattleRules {
     final beforeHealth =
         application.userTeam.combatants[bearerIndex].currentHealth;
     final healedTeam = application.userTeam.healCombatant(bearerIndex, amount);
+    final actualHealing =
+        healedTeam.combatants[bearerIndex].currentHealth - beforeHealth;
     return application.copyWith(
       userTeam: healedTeam,
-      healing:
-          application.healing +
-          healedTeam.combatants[bearerIndex].currentHealth -
-          beforeHealth,
+      healing: application.healing + actualHealing,
+      effectEvents: [
+        ...application.effectEvents,
+        if (actualHealing > 0)
+          _ApplicationEffectEvent(
+            targetsUser: true,
+            combatantIndex: bearerIndex,
+            type: BattleEffectType.healing,
+            amount: actualHealing,
+          ),
+      ],
     );
   }
 
@@ -939,7 +1148,7 @@ class StandardBattleRules implements BattleRules {
 }
 
 class _MoveApplication {
-  const _MoveApplication({
+  _MoveApplication({
     required this.userTeam,
     required this.targetTeam,
     this.activeDamage = 0,
@@ -947,7 +1156,8 @@ class _MoveApplication {
     this.healing = 0,
     this.swapped = false,
     this.targetSwapped = false,
-  });
+    List<_ApplicationEffectEvent> effectEvents = const [],
+  }) : effectEvents = List.unmodifiable(effectEvents);
 
   factory _MoveApplication.noop({
     required BattleTeam userTeam,
@@ -963,6 +1173,7 @@ class _MoveApplication {
   final double healing;
   final bool swapped;
   final bool targetSwapped;
+  final List<_ApplicationEffectEvent> effectEvents;
 
   _MoveApplication copyWith({
     BattleTeam? userTeam,
@@ -972,6 +1183,7 @@ class _MoveApplication {
     double? healing,
     bool? swapped,
     bool? targetSwapped,
+    List<_ApplicationEffectEvent>? effectEvents,
   }) {
     return _MoveApplication(
       userTeam: userTeam ?? this.userTeam,
@@ -981,10 +1193,37 @@ class _MoveApplication {
       healing: healing ?? this.healing,
       swapped: swapped ?? this.swapped,
       targetSwapped: targetSwapped ?? this.targetSwapped,
+      effectEvents: effectEvents ?? this.effectEvents,
     );
   }
 
   _MoveApplication mergeUserTeam(BattleTeam userTeam) {
     return copyWith(userTeam: userTeam);
   }
+}
+
+class _ApplicationEffectEvent {
+  const _ApplicationEffectEvent({
+    required this.targetsUser,
+    required this.combatantIndex,
+    required this.type,
+    required this.amount,
+  });
+
+  final bool targetsUser;
+  final int combatantIndex;
+  final BattleEffectType type;
+  final double amount;
+}
+
+class _EndTurnEffectEvent {
+  const _EndTurnEffectEvent({
+    required this.combatantIndex,
+    required this.type,
+    required this.amount,
+  });
+
+  final int combatantIndex;
+  final BattleEffectType type;
+  final double amount;
 }

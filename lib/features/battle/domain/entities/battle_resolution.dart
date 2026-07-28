@@ -1,4 +1,5 @@
 import 'battle_gesture.dart';
+import 'battle_effect_event.dart';
 import 'battle_team.dart';
 
 class BattleResolution {
@@ -16,7 +17,9 @@ class BattleResolution {
     this.reserveDamageToOpponent = 0,
     this.playerSwapped = false,
     this.opponentSwapped = false,
+    List<BattleEffectEvent> effectEvents = const [],
   }) : damagedPlayerIndexes = List.unmodifiable(damagedPlayerIndexes),
+       effectEvents = List.unmodifiable(effectEvents),
        damagedOpponentIndexes = List.unmodifiable(damagedOpponentIndexes);
 
   final BattleOutcome outcome;
@@ -32,6 +35,7 @@ class BattleResolution {
   final double reserveDamageToOpponent;
   final bool playerSwapped;
   final bool opponentSwapped;
+  final List<BattleEffectEvent> effectEvents;
 
   BattleResolution copyWith({
     BattleTeam? playerTeam,
@@ -51,6 +55,7 @@ class BattleResolution {
       reserveDamageToOpponent: reserveDamageToOpponent,
       playerSwapped: playerSwapped,
       opponentSwapped: opponentSwapped,
+      effectEvents: effectEvents,
     );
   }
 }

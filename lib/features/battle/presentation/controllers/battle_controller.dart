@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../champions/domain/entities/champion_move.dart';
 import '../../../companions/domain/entities/companion.dart';
+import '../../application/services/battle_log_formatter.dart';
 import '../../application/services/battle_session.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
@@ -14,6 +15,8 @@ class BattleController extends ChangeNotifier {
     required BattleTeam playerTeam,
     required BattleTeam opponentTeam,
     required BattleSession session,
+    this.playerName = 'Jugador',
+    this.opponentName = 'John(CPU)',
   }) : _session = session,
        _initialState = session.initialState(
          playerTeam: playerTeam,
@@ -22,11 +25,21 @@ class BattleController extends ChangeNotifier {
        _state = session.initialState(
          playerTeam: playerTeam,
          opponentTeam: opponentTeam,
+       ),
+       _combatLog = BattleLogFormatter.combatStart(
+         playerName: playerName,
+         opponentName: opponentName,
+         playerTeam: playerTeam,
+         opponentTeam: opponentTeam,
        );
 
   final BattleSession _session;
   final BattleState _initialState;
+  final String playerName;
+  final String opponentName;
+  final List<String> _combatLog;
   BattleState _state;
+  BattleState? _pendingActionStartState;
 
   BattleState get state => _state;
   Combatant get player => _state.player;
@@ -46,6 +59,7 @@ class BattleController extends ChangeNotifier {
   bool get canSwap => _state.canSwap;
   ChampionMove? get selectedPlayerMove => _state.selectedPlayerMove;
   List<Companion> get wildCompanionStack => _state.wildCompanionStack;
+  List<String> get combatLog => List.unmodifiable(_combatLog);
 
   void startFight() => _emit(_session.startFight(_state));
 
@@ -61,19 +75,62 @@ class BattleController extends ChangeNotifier {
     _emit(_session.selectPlayerSpeciesCard(_state, index));
   }
 
-  bool beginShowdown() => _emit(_session.beginShowdown(_state));
+  bool beginShowdown() {
+    final nextState = _session.beginShowdown(_state);
+    if (identical(nextState, _state)) return false;
+    _pendingActionStartState = _state;
+    return _emit(nextState);
+  }
 
-  bool beginSwap(int index) => _emit(_session.beginSwap(_state, index));
+  bool beginSwap(int index) {
+    final nextState = _session.beginSwap(_state, index);
+    if (identical(nextState, _state)) return false;
+    _pendingActionStartState = _state;
+    return _emit(nextState);
+  }
 
   bool resolvePendingAction() {
-    return _emit(_session.resolvePendingAction(_state));
+    final nextState = _session.resolvePendingAction(_state);
+    if (identical(nextState, _state)) return false;
+    _combatLog.addAll(
+      BattleLogFormatter.resolvedTurn(
+        beforeAction: _pendingActionStartState ?? _state,
+        resolvedAction: _state,
+        afterAction: nextState,
+        playerName: playerName,
+        opponentName: opponentName,
+      ),
+    );
+    return _emit(nextState);
   }
 
   bool completeResolution() {
-    return _emit(_session.completeResolution(_state));
+    final previousCompanions = _state.wildCompanionStack;
+    final nextState = _session.completeResolution(_state);
+    if (identical(nextState, _state)) return false;
+    if (nextState.wildCompanionStack.length > previousCompanions.length) {
+      _combatLog.add(
+        BattleLogFormatter.companionAppeared(nextState.wildCompanionStack.last),
+      );
+    }
+    _pendingActionStartState = null;
+    return _emit(nextState);
   }
 
-  void resetBattle() => _emit(_initialState);
+  void resetBattle() {
+    _pendingActionStartState = null;
+    _combatLog
+      ..clear()
+      ..addAll(
+        BattleLogFormatter.combatStart(
+          playerName: playerName,
+          opponentName: opponentName,
+          playerTeam: _initialState.playerTeam,
+          opponentTeam: _initialState.opponentTeam,
+        ),
+      );
+    if (!_emit(_initialState)) notifyListeners();
+  }
 
   bool _emit(BattleState nextState) {
     if (identical(nextState, _state)) return false;

@@ -45,6 +45,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
 
   BattleController? _controller;
   Object? _loadError;
+  bool _combatLogOpen = false;
   final _battleActionFocusNodes = List.generate(
     4,
     (index) => FocusNode(debugLabel: 'Battle action ${index + 1}'),
@@ -71,6 +72,8 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     try {
       final collection = await widget.playerPreferences
           .getChampionCollectionCounts();
+      final playerName =
+          await widget.playerPreferences.getPlayerName() ?? 'Jugador';
       final teams = FossilRaceTeamFactory(
         catalog: widget.catalog,
       ).create(collection);
@@ -79,9 +82,12 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       setState(() {
         final companionRandomizer = CompanionRandomizer();
         _loadError = null;
+        _combatLogOpen = false;
         _controller = BattleController(
           playerTeam: teams.playerTeam,
           opponentTeam: teams.opponentTeam,
+          playerName: playerName,
+          opponentName: 'John(CPU)',
           session: BattleSession(
             rules: StandardBattleRules(
               companionRandomizer: companionRandomizer,
@@ -235,9 +241,12 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                       final compact =
                           constraints.maxHeight < 560 ||
                           constraints.maxWidth < 900;
+                      final mobileLog = constraints.maxWidth < 700;
                       return _BattleRoom(
                         controller: controller,
                         compact: compact,
+                        mobileLog: mobileLog,
+                        combatLogOpen: _combatLogOpen,
                         battleActionFocusNodes: _battleActionFocusNodes,
                         moveFocusNodes: _moveFocusNodes,
                         swapFocusNodes: _swapFocusNodes,
@@ -252,6 +261,12 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                         onShowdown: _showdown,
                         onRematch: _resetBattle,
                         onExit: () => Navigator.of(context).pop(),
+                        onOpenCombatLog: () {
+                          setState(() => _combatLogOpen = true);
+                        },
+                        onCloseCombatLog: () {
+                          setState(() => _combatLogOpen = false);
+                        },
                       );
                     },
                   ),
@@ -306,6 +321,8 @@ class _BattleRoom extends StatelessWidget {
   const _BattleRoom({
     required this.controller,
     required this.compact,
+    required this.mobileLog,
+    required this.combatLogOpen,
     required this.battleActionFocusNodes,
     required this.moveFocusNodes,
     required this.swapFocusNodes,
@@ -320,10 +337,14 @@ class _BattleRoom extends StatelessWidget {
     required this.onShowdown,
     required this.onRematch,
     required this.onExit,
+    required this.onOpenCombatLog,
+    required this.onCloseCombatLog,
   });
 
   final BattleController controller;
   final bool compact;
+  final bool mobileLog;
+  final bool combatLogOpen;
   final List<FocusNode> battleActionFocusNodes;
   final List<FocusNode> moveFocusNodes;
   final List<FocusNode> swapFocusNodes;
@@ -338,6 +359,8 @@ class _BattleRoom extends StatelessWidget {
   final VoidCallback onShowdown;
   final VoidCallback onRematch;
   final VoidCallback onExit;
+  final VoidCallback onOpenCombatLog;
+  final VoidCallback onCloseCombatLog;
 
   @override
   Widget build(BuildContext context) {
@@ -463,6 +486,13 @@ class _BattleRoom extends StatelessWidget {
             onRematch: onRematch,
             onExit: onExit,
           ),
+        _CombatLogOverlay(
+          entries: controller.combatLog,
+          mobile: mobileLog,
+          open: combatLogOpen,
+          onOpen: onOpenCombatLog,
+          onClose: onCloseCombatLog,
+        ),
         Positioned(
           left: compact ? 10 : 18,
           top: compact ? 8 : 14,
@@ -478,6 +508,247 @@ class _BattleRoom extends StatelessWidget {
           child: _ModeBadge(compact: compact),
         ),
       ],
+    );
+  }
+}
+
+class _CombatLogOverlay extends StatefulWidget {
+  const _CombatLogOverlay({
+    required this.entries,
+    required this.mobile,
+    required this.open,
+    required this.onOpen,
+    required this.onClose,
+  });
+
+  final List<String> entries;
+  final bool mobile;
+  final bool open;
+  final VoidCallback onOpen;
+  final VoidCallback onClose;
+
+  @override
+  State<_CombatLogOverlay> createState() => _CombatLogOverlayState();
+}
+
+class _CombatLogOverlayState extends State<_CombatLogOverlay> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollToLatest();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CombatLogOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.entries.length != oldWidget.entries.length ||
+        (widget.mobile && widget.open && !oldWidget.open)) {
+      _scrollToLatest();
+    }
+  }
+
+  void _scrollToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final panelWidth = widget.mobile
+            ? math.min(constraints.maxWidth * 0.82, 360.0)
+            : math.min(constraints.maxWidth * 0.25, 380.0);
+        final availableHeight = math.max(120.0, constraints.maxHeight - 32);
+        final panelHeight = math.min(
+          math.max(240.0, constraints.maxHeight * 0.72),
+          availableHeight,
+        );
+        final top = (constraints.maxHeight - panelHeight) / 2;
+        final panelLeft = widget.mobile
+            ? (widget.open ? 0.0 : -panelWidth - 8)
+            : 16.0;
+        final toggleLeft = widget.open ? panelWidth : 0.0;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AnimatedPositioned(
+              left: panelLeft,
+              top: top,
+              width: panelWidth,
+              height: panelHeight,
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              child: _CombatLogPanel(
+                entries: widget.entries,
+                scrollController: _scrollController,
+              ),
+            ),
+            if (widget.mobile)
+              AnimatedPositioned(
+                left: toggleLeft,
+                top: (constraints.maxHeight - 46) / 2,
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                child: _CombatLogToggle(
+                  open: widget.open,
+                  onPressed: widget.open ? widget.onClose : widget.onOpen,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CombatLogPanel extends StatelessWidget {
+  const _CombatLogPanel({
+    required this.entries,
+    required this.scrollController,
+  });
+
+  final List<String> entries;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Registro de combate',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.ink.withValues(alpha: 0.94),
+          border: Border.all(
+            color: AppColors.amber.withValues(alpha: 0.82),
+            width: 1.5,
+          ),
+          borderRadius: const BorderRadius.horizontal(
+            right: Radius.circular(14),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.48),
+              blurRadius: 18,
+              offset: const Offset(5, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.horizontal(
+            right: Radius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                color: AppColors.deepEarth.withValues(alpha: 0.96),
+                child: const Text(
+                  'REGISTRO DE COMBATE',
+                  style: TextStyle(
+                    color: AppColors.amber,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Scrollbar(
+                  controller: scrollController,
+                  thumbVisibility: true,
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final separator = entry == '---';
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: separator ? 8 : 5,
+                          top: separator && index > 0 ? 4 : 0,
+                        ),
+                        child: SelectableText(
+                          entry,
+                          style: TextStyle(
+                            color: separator ? AppColors.amber : AppColors.bone,
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: separator
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CombatLogToggle extends StatelessWidget {
+  const _CombatLogToggle({required this.open, required this.onPressed});
+
+  final bool open;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: open ? 'Cerrar registro de combate' : 'Abrir registro de combate',
+      child: Material(
+        color: AppColors.deepEarth.withValues(alpha: 0.97),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(10)),
+          side: BorderSide(color: AppColors.amber, width: 1.5),
+        ),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: const BorderRadius.horizontal(
+            right: Radius.circular(10),
+          ),
+          child: SizedBox(
+            width: 38,
+            height: 46,
+            child: Center(
+              child: Text(
+                open ? '<' : '>',
+                style: const TextStyle(
+                  color: AppColors.amber,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
