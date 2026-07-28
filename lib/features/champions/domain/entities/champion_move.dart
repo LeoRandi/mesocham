@@ -15,6 +15,8 @@ enum MoveEffect {
   recklessDamage,
 }
 
+enum CompanionMoveEffect { none, summonRandom, stealRandom, transferOnSwap }
+
 class ChampionMove {
   ChampionMove({
     required this.name,
@@ -30,6 +32,7 @@ class ChampionMove {
     this.selfDamage = 0,
     this.bonusPotencyIfTargetSwapped = 0,
     this.cleansesHarmfulStatuses = false,
+    this.companionEffect = CompanionMoveEffect.none,
   }) : statusApplications = List.unmodifiable(statusApplications);
 
   final String name;
@@ -45,4 +48,5 @@ class ChampionMove {
   final double selfDamage;
   final double bonusPotencyIfTargetSwapped;
   final bool cleansesHarmfulStatuses;
+  final CompanionMoveEffect companionEffect;
 }

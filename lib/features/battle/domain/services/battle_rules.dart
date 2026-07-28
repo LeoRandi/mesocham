@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import '../../../champions/domain/entities/champion_move.dart';
+import '../../../companions/domain/entities/companion.dart';
 import '../../../species_cards/domain/entities/species_card.dart';
 import '../entities/battle_gesture.dart';
 import '../entities/battle_resolution.dart';
 import '../entities/battle_status.dart';
 import '../entities/battle_team.dart';
 import '../entities/combatant.dart';
+import 'companion_randomizer.dart';
 
 abstract interface class BattleRules {
   BattleResolution resolve({
@@ -24,7 +26,10 @@ abstract interface class BattleRules {
 }
 
 class StandardBattleRules implements BattleRules {
-  const StandardBattleRules();
+  StandardBattleRules({required CompanionRandomizer companionRandomizer})
+    : _companionRandomizer = companionRandomizer;
+
+  final CompanionRandomizer _companionRandomizer;
 
   @override
   BattleResolution resolve({
@@ -77,11 +82,16 @@ class StandardBattleRules implements BattleRules {
     }
 
     if (playerGesture.beats(opponentGesture)) {
-      final playerApplication = _applyMove(
-        userTeam: playerTeam,
-        targetTeam: opponentTeam,
-        move: playerMove,
-        potency: playerMove.potency,
+      final companionHealing = _victoryCompanionHealing(playerTeam.active);
+      final playerApplication = _applyVictoryHealing(
+        _applyMove(
+          userTeam: playerTeam,
+          targetTeam: opponentTeam,
+          move: playerMove,
+          potency: playerMove.potency,
+        ),
+        bearerIndex: playerTeam.activeIndex,
+        amount: companionHealing,
       );
 
       return _buildResolution(
@@ -96,11 +106,15 @@ class StandardBattleRules implements BattleRules {
       );
     }
 
-    final opponentApplication = _applyMove(
-      userTeam: opponentTeam,
-      targetTeam: playerTeam,
-      move: opponentMove,
-      potency: opponentMove.potency,
+    final opponentApplication = _applyVictoryHealing(
+      _applyMove(
+        userTeam: opponentTeam,
+        targetTeam: playerTeam,
+        move: opponentMove,
+        potency: opponentMove.potency,
+      ),
+      bearerIndex: opponentTeam.activeIndex,
+      amount: _victoryCompanionHealing(opponentTeam.active),
     );
 
     return _buildResolution(
@@ -377,14 +391,37 @@ class StandardBattleRules implements BattleRules {
       }
     }
 
-    return applySecondaryEffects
-        ? _applyStatuses(
-            application,
-            move.statusApplications,
-            isCritical: move.isCritical,
-            attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
-          )
-        : application;
+    if (applySecondaryEffects) {
+      application = _applyStatuses(
+        application,
+        move.statusApplications,
+        isCritical: move.isCritical,
+        attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+      );
+      application = _applyCompanionMoveEffect(
+        application,
+        move.companionEffect,
+        originalBearerIndex: userTeam.activeIndex,
+      );
+    }
+
+    final bleedingStacks =
+        userTeam.active.companionCount(Companion.didelphodon) *
+        userTeam.active.companionEffectMultiplier.round();
+    if (applySecondaryEffects &&
+        _dealsDamage(move.effect) &&
+        bleedingStacks > 0) {
+      application = application.copyWith(
+        targetTeam: application.targetTeam.applyEnemyStatusToActive(
+          StatusApplication(
+            type: StatusType.bleeding,
+            target: StatusTarget.opponent,
+            stacks: bleedingStacks,
+          ),
+        ),
+      );
+    }
+    return application;
   }
 
   _MoveApplication _damageActive(
@@ -595,7 +632,13 @@ class StandardBattleRules implements BattleRules {
     );
 
     if (actualDamage > 0 && target.hasStatus(StatusType.jaggedScales)) {
-      nextUserTeam = nextUserTeam.damageActive(actualDamage * 0.3);
+      final henodusCopies = target.companionCount(Companion.henodus);
+      final reflectedFraction = henodusCopies > 0
+          ? 0.3 * henodusCopies * target.companionEffectMultiplier
+          : 0.3;
+      nextUserTeam = nextUserTeam.damageActive(
+        actualDamage * reflectedFraction,
+      );
     }
 
     return _MoveApplication(
@@ -628,7 +671,7 @@ class StandardBattleRules implements BattleRules {
           ),
         ),
         StatusTarget.opponent => nextApplication.copyWith(
-          targetTeam: nextApplication.targetTeam.applyStatusToActive(
+          targetTeam: nextApplication.targetTeam.applyEnemyStatusToActive(
             adjustedApplication,
           ),
         ),
@@ -661,6 +704,8 @@ class StandardBattleRules implements BattleRules {
       target: application.target,
       stacks: application.stacks,
       durationTurns: duration,
+      permanent: application.permanent,
+      delayFirstTick: application.delayFirstTick,
     );
   }
 
@@ -675,6 +720,14 @@ class StandardBattleRules implements BattleRules {
     final conditionalPotency = targetSwappedThisTurn
         ? move.bonusPotencyIfTargetSwapped
         : 0;
+    final dragonflyPotency = attacker.companionValue(
+      10.0 * attacker.companionCount(Companion.dragonfly),
+    );
+    final criticalCompanionPotency = move.isCritical
+        ? attacker.companionValue(
+            30.0 * attacker.companionCount(Companion.longisquama),
+          )
+        : 0;
     var multiplier = 1.0;
     if (attacker.equippedSpeciesCard == SpeciesCard.superPredator) {
       multiplier *= 1.5;
@@ -683,7 +736,176 @@ class StandardBattleRules implements BattleRules {
         attacker.equippedSpeciesCard == SpeciesCard.shadowHunter) {
       multiplier *= 1.66;
     }
-    return (potency + conditionalPotency) * multiplier;
+    return (potency +
+            conditionalPotency +
+            dragonflyPotency +
+            criticalCompanionPotency) *
+        multiplier;
+  }
+
+  double _victoryCompanionHealing(Combatant bearer) {
+    return bearer.companionValue(
+      10.0 * bearer.companionCount(Companion.iberomesornis),
+    );
+  }
+
+  _MoveApplication _applyVictoryHealing(
+    _MoveApplication application, {
+    required int bearerIndex,
+    required double amount,
+  }) {
+    if (amount <= 0 ||
+        application.userTeam.combatants[bearerIndex].isDefeated) {
+      return application;
+    }
+    final beforeHealth =
+        application.userTeam.combatants[bearerIndex].currentHealth;
+    final healedTeam = application.userTeam.healCombatant(bearerIndex, amount);
+    return application.copyWith(
+      userTeam: healedTeam,
+      healing:
+          application.healing +
+          healedTeam.combatants[bearerIndex].currentHealth -
+          beforeHealth,
+    );
+  }
+
+  _MoveApplication _applyCompanionMoveEffect(
+    _MoveApplication application,
+    CompanionMoveEffect effect, {
+    required int originalBearerIndex,
+  }) {
+    return switch (effect) {
+      CompanionMoveEffect.none => application,
+      CompanionMoveEffect.summonRandom => _summonCompanion(
+        application,
+        originalBearerIndex,
+      ),
+      CompanionMoveEffect.stealRandom => _stealCompanion(
+        application,
+        originalBearerIndex,
+      ),
+      CompanionMoveEffect.transferOnSwap => _transferCompanionsAfterSwap(
+        application,
+        originalBearerIndex,
+      ),
+    };
+  }
+
+  _MoveApplication _summonCompanion(
+    _MoveApplication application,
+    int bearerIndex,
+  ) {
+    final companion = _companionRandomizer.chooseAppearing(
+      beetleBlocked:
+          application.userTeam.active.hasCompanion(Companion.beetle) ||
+          application.targetTeam.active.hasCompanion(Companion.beetle),
+    );
+    return companion == null
+        ? application
+        : _attachCompanion(application, bearerIndex, companion);
+  }
+
+  _MoveApplication _stealCompanion(
+    _MoveApplication application,
+    int bearerIndex,
+  ) {
+    final targetIndex = application.targetTeam.activeIndex;
+    final companion = _companionRandomizer.chooseFrom(
+      application.targetTeam.combatants[targetIndex].companions,
+    );
+    if (companion == null) return application;
+
+    final targetTeam = application.targetTeam.removeCompanion(
+      bearerIndex: targetIndex,
+      companion: companion,
+    );
+    return _attachCompanion(
+      application.copyWith(targetTeam: targetTeam),
+      bearerIndex,
+      companion,
+    );
+  }
+
+  _MoveApplication _transferCompanionsAfterSwap(
+    _MoveApplication application,
+    int originalBearerIndex,
+  ) {
+    if (!application.swapped ||
+        application.userTeam.activeIndex == originalBearerIndex) {
+      return application;
+    }
+    final transferredCompanions =
+        application.userTeam.combatants[originalBearerIndex].companions;
+    final transferredTeam = application.userTeam.transferCompanions(
+      fromIndex: originalBearerIndex,
+      toIndex: application.userTeam.activeIndex,
+      activateEffectsImmediately: false,
+    );
+    final transferredApplication = application.copyWith(
+      userTeam: transferredTeam,
+    );
+    return transferredCompanions.any(
+          (companion) =>
+              companion == Companion.weta || companion == Companion.beetle,
+        )
+        ? _applyFamineFromBearer(
+            transferredApplication,
+            transferredTeam.activeIndex,
+            delayFirstTick: transferredCompanions.contains(Companion.weta),
+          )
+        : transferredApplication;
+  }
+
+  _MoveApplication _attachCompanion(
+    _MoveApplication application,
+    int bearerIndex,
+    Companion companion,
+  ) {
+    final beforeBearer = application.userTeam.combatants[bearerIndex];
+    final userTeam = application.userTeam.addCompanion(
+      bearerIndex: bearerIndex,
+      companion: companion,
+      activateEffectsImmediately: false,
+    );
+    final afterBearer = userTeam.combatants[bearerIndex];
+    if (afterBearer.companions.length == beforeBearer.companions.length) {
+      return application;
+    }
+
+    final attachedApplication = application.copyWith(userTeam: userTeam);
+    return companion == Companion.weta || companion == Companion.beetle
+        ? _applyFamineFromBearer(
+            attachedApplication,
+            bearerIndex,
+            delayFirstTick: companion == Companion.weta,
+          )
+        : attachedApplication;
+  }
+
+  _MoveApplication _applyFamineFromBearer(
+    _MoveApplication application,
+    int bearerIndex, {
+    required bool delayFirstTick,
+  }) {
+    final bearer = application.userTeam.combatants[bearerIndex];
+    final famineStacks =
+        (bearer.companionCount(Companion.weta) *
+                bearer.companionEffectMultiplier)
+            .round();
+    if (famineStacks <= 0) return application;
+
+    return application.copyWith(
+      targetTeam: application.targetTeam.applyStatusToActive(
+        StatusApplication(
+          type: StatusType.famine,
+          target: StatusTarget.opponent,
+          stacks: famineStacks,
+          permanent: true,
+          delayFirstTick: delayFirstTick,
+        ),
+      ),
+    );
   }
 
   bool _dealsDamage(MoveEffect effect) => switch (effect) {

@@ -16,6 +16,7 @@ class ChampionMoveDefinition {
     this.selfDamage = 0,
     this.bonusPotencyIfTargetSwapped = 0,
     this.cleansesHarmfulStatuses = false,
+    this.companionEffect = CompanionMoveEffect.none,
   });
 
   final String name;
@@ -30,6 +31,7 @@ class ChampionMoveDefinition {
   final double selfDamage;
   final double bonusPotencyIfTargetSwapped;
   final bool cleansesHarmfulStatuses;
+  final CompanionMoveEffect companionEffect;
 }
 
 class ChampionDefinition {

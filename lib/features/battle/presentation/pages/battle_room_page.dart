@@ -6,6 +6,8 @@ import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
+import '../../../companions/domain/entities/companion.dart';
+import '../../../companions/presentation/widgets/companion_orb.dart';
 import '../../../home/data/player_preferences.dart';
 import '../../../species_cards/presentation/widgets/species_card_widgets.dart';
 import '../../application/services/battle_session.dart';
@@ -17,6 +19,7 @@ import '../../domain/entities/battle_team.dart';
 import '../../domain/entities/combatant.dart';
 import '../../domain/services/ai_move_strategy.dart';
 import '../../domain/services/battle_rules.dart';
+import '../../domain/services/companion_randomizer.dart';
 import '../controllers/battle_controller.dart';
 import '../widgets/battle_backdrop.dart';
 import '../widgets/battle_controls.dart';
@@ -74,13 +77,17 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       if (!mounted) return;
 
       setState(() {
+        final companionRandomizer = CompanionRandomizer();
         _loadError = null;
         _controller = BattleController(
           playerTeam: teams.playerTeam,
           opponentTeam: teams.opponentTeam,
           session: BattleSession(
-            rules: const StandardBattleRules(),
+            rules: StandardBattleRules(
+              companionRandomizer: companionRandomizer,
+            ),
             opponentStrategy: FossilRaceAiStrategy(),
+            companionRandomizer: companionRandomizer,
           ),
         );
       });
@@ -414,6 +421,20 @@ class _BattleRoom extends StatelessWidget {
             ),
           ),
         ),
+        if (controller.wildCompanionStack.isNotEmpty)
+          IgnorePointer(
+            child: Align(
+              alignment: const Alignment(-0.34, 0),
+              child: AnimatedOpacity(
+                opacity: overlayVisible ? 0.82 : 1,
+                duration: const Duration(milliseconds: 260),
+                child: _WildCompanionStack(
+                  companions: controller.wildCompanionStack,
+                  compact: compact,
+                ),
+              ),
+            ),
+          ),
         _MoveSelectionLayer(
           controller: controller,
           compact: compact,
@@ -507,119 +528,104 @@ class _ChampionZone extends StatelessWidget {
       builder: (context, constraints) {
         final controlsInset = compact ? 52.0 : 78.0;
         final availableForCard =
-            constraints.maxHeight - controlsInset - (compact ? 28 : 44);
+            constraints.maxHeight -
+            (isOpponent ? 0 : controlsInset) -
+            (compact ? 26 : 42);
         final cardHeight = math
             .max(
               compact ? 68.0 : 100.0,
-              math.min(compact ? 108.0 : 220.0, availableForCard),
+              math.min(compact ? 108.0 : 196.0, availableForCard),
             )
             .toDouble();
-        final horizontalPadding = compact ? 12.0 : 48.0;
-        final formationWidth = math.min(
-          1240.0,
-          math.max(0, constraints.maxWidth - horizontalPadding * 2),
-        );
-        final columnWidth = formationWidth / 3;
+        final horizontalPadding = compact ? 12.0 : 32.0;
+        final sidePanelWidth = math
+            .min(
+              compact ? 270.0 : 390.0,
+              math.max(
+                compact ? 210.0 : 300.0,
+                constraints.maxWidth * (compact ? 0.43 : 0.39),
+              ),
+            )
+            .toDouble();
         final cardGap = compact ? 4.0 : 7.0;
-        final targetMiniCardHeight = cardHeight * (compact ? 0.42 : 0.4);
-        final maxMiniCardHeight =
-            (columnWidth - cardGap * 2 - (compact ? 8 : 20)) / (3 * 0.7);
         final miniCardHeight = math
             .max(
-              compact ? 32.0 : 52.0,
-              math.min(targetMiniCardHeight, maxMiniCardHeight),
+              compact ? 30.0 : 48.0,
+              math.min(
+                cardHeight * (compact ? 0.36 : 0.34),
+                compact ? 44.0 : 66.0,
+              ),
             )
             .toDouble();
         final accent = isOpponent ? AppColors.danger : AppColors.teal;
 
         return Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.only(
-                top: isOpponent ? controlsInset : 0,
-                bottom: isOpponent ? 0 : controlsInset,
-                left: horizontalPadding,
-                right: horizontalPadding,
-              ),
+            Positioned.fill(
+              bottom: isOpponent ? 0 : controlsInset,
               child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1240),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: _SpeciesCardGroup(
-                          team: team,
-                          compact: compact,
-                          cardGap: cardGap,
-                          selectedIndex: selectedSpeciesCardIndex,
-                          selectionEnabled: speciesCardSelectionEnabled,
-                          onSelected: onSelectSpeciesCard,
-                        ),
-                      ),
-                      Expanded(
-                        child: AnimatedOpacity(
-                          opacity: showChampion ? 1 : 0,
-                          duration: const Duration(milliseconds: 360),
-                          curve: Curves.easeOut,
-                          child: AnimatedScale(
-                            scale: showChampion ? 1 : 0.38,
-                            duration: const Duration(milliseconds: 430),
-                            curve: Curves.easeInBack,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  isOpponent
-                                      ? 'RIVAL ACTIVE CHAMPION'
-                                      : 'YOUR ACTIVE CHAMPION',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.fade,
-                                  softWrap: false,
-                                  style: TextStyle(
-                                    color: accent,
-                                    fontSize: compact ? 8 : 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: compact ? 0.8 : 1.15,
-                                  ),
-                                ),
-                                SizedBox(height: compact ? 3 : 6),
-                                SpeciesCardBearer(
-                                  bearerHeight: cardHeight,
-                                  card: combatant.equippedSpeciesCard,
-                                  effectActive: true,
-                                  child: ChampionCard(
-                                    champion: combatant.champion,
-                                    height: cardHeight,
-                                    currentHealth: combatant.currentHealth,
-                                    maximumHealth: combatant.maxHealth,
-                                    defeated: combatant.isDefeated,
-                                    damageTrigger: activeDamageTrigger,
-                                  ),
-                                ),
-                                SizedBox(height: compact ? 2 : 4),
-                                _StatusStrip(
-                                  combatant: combatant,
-                                  compact: compact,
-                                ),
-                              ],
-                            ),
+                child: AnimatedOpacity(
+                  opacity: showChampion ? 1 : 0,
+                  duration: const Duration(milliseconds: 360),
+                  curve: Curves.easeOut,
+                  child: AnimatedScale(
+                    scale: showChampion ? 1 : 0.38,
+                    duration: const Duration(milliseconds: 430),
+                    curve: Curves.easeInBack,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isOpponent
+                              ? 'RIVAL ACTIVE CHAMPION'
+                              : 'YOUR ACTIVE CHAMPION',
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: compact ? 8 : 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: compact ? 0.8 : 1.15,
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: _ReserveCardGroup(
-                          compact: compact,
-                          cardHeight: miniCardHeight,
-                          cardGap: cardGap,
-                          team: team,
-                          resolutionSequence: resolutionSequence,
-                          damagedIndexes: damagedIndexes,
+                        SizedBox(height: compact ? 3 : 6),
+                        SpeciesCardBearer(
+                          bearerHeight: cardHeight,
+                          card: combatant.equippedSpeciesCard,
+                          effectActive: true,
+                          child: ChampionCard(
+                            champion: combatant.champion,
+                            height: cardHeight,
+                            currentHealth: combatant.currentHealth,
+                            maximumHealth: combatant.maxHealth,
+                            defeated: combatant.isDefeated,
+                            damageTrigger: activeDamageTrigger,
+                          ),
                         ),
-                      ),
-                    ],
+                        SizedBox(height: compact ? 2 : 4),
+                        _StatusStrip(combatant: combatant, compact: compact),
+                      ],
+                    ),
                   ),
                 ),
+              ),
+            ),
+            Positioned(
+              top: compact ? 6 : 14,
+              right: horizontalPadding,
+              bottom: (isOpponent ? 0 : controlsInset) + (compact ? 6 : 14),
+              width: sidePanelWidth,
+              child: _BattleSidePanel(
+                team: team,
+                compact: compact,
+                cardGap: cardGap,
+                miniCardHeight: miniCardHeight,
+                selectedSpeciesCardIndex: selectedSpeciesCardIndex,
+                speciesCardSelectionEnabled: speciesCardSelectionEnabled,
+                resolutionSequence: resolutionSequence,
+                damagedIndexes: damagedIndexes,
+                onSelectSpeciesCard: onSelectSpeciesCard,
               ),
             ),
             if (!isOpponent)
@@ -645,6 +651,191 @@ class _ChampionZone extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _BattleSidePanel extends StatelessWidget {
+  const _BattleSidePanel({
+    required this.team,
+    required this.compact,
+    required this.cardGap,
+    required this.miniCardHeight,
+    required this.selectedSpeciesCardIndex,
+    required this.speciesCardSelectionEnabled,
+    required this.resolutionSequence,
+    required this.damagedIndexes,
+    required this.onSelectSpeciesCard,
+  });
+
+  final BattleTeam team;
+  final bool compact;
+  final double cardGap;
+  final double miniCardHeight;
+  final int? selectedSpeciesCardIndex;
+  final bool speciesCardSelectionEnabled;
+  final int resolutionSequence;
+  final List<int> damagedIndexes;
+  final ValueChanged<int> onSelectSpeciesCard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: _CompanionGroup(combatant: team.active, compact: compact),
+          ),
+        ),
+        SizedBox(height: compact ? 6 : 12),
+        _SpeciesCardGroup(
+          team: team,
+          compact: compact,
+          cardGap: cardGap,
+          selectedIndex: selectedSpeciesCardIndex,
+          selectionEnabled: speciesCardSelectionEnabled,
+          onSelected: onSelectSpeciesCard,
+        ),
+        SizedBox(height: compact ? 10 : 20),
+        _ReserveCardGroup(
+          compact: compact,
+          cardHeight: miniCardHeight,
+          cardGap: cardGap,
+          team: team,
+          resolutionSequence: resolutionSequence,
+          damagedIndexes: damagedIndexes,
+        ),
+      ],
+    );
+  }
+}
+
+class _CompanionGroup extends StatelessWidget {
+  const _CompanionGroup({required this.combatant, required this.compact});
+
+  final Combatant combatant;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final diameter = compact ? 28.0 : 42.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _GroupLabel(label: 'COMPANIONS', compact: compact),
+        SizedBox(height: compact ? 4 : 8),
+        if (combatant.companions.isEmpty)
+          Text(
+            '—',
+            style: TextStyle(
+              color: AppColors.sand.withValues(alpha: 0.45),
+              fontSize: compact ? 12 : 17,
+              fontWeight: FontWeight.w800,
+            ),
+          )
+        else
+          SizedBox(
+            height: diameter,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (
+                    var index = 0;
+                    index < combatant.companions.length;
+                    index++
+                  )
+                    Padding(
+                      padding: EdgeInsets.only(
+                        left: index == 0 ? 0 : (compact ? 4 : 7),
+                      ),
+                      child: CompanionOrb(
+                        key: ValueKey(
+                          '${combatant.champion.id}-$index-'
+                          '${combatant.companions[index].name}',
+                        ),
+                        companion: combatant.companions[index],
+                        diameter: diameter,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _WildCompanionStack extends StatelessWidget {
+  const _WildCompanionStack({required this.companions, required this.compact});
+
+  final List<Companion> companions;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final diameter = compact ? 62.0 : 92.0;
+    final visibleCount = companions.length;
+    final horizontalOffset = diameter * 0.14;
+    final verticalOffset = diameter * 0.1;
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 360),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      child: SizedBox(
+        key: ObjectKey(companions),
+        width: diameter + horizontalOffset * (visibleCount - 1),
+        height:
+            diameter +
+            verticalOffset * (visibleCount - 1) +
+            (compact ? 22 : 30),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (var index = visibleCount - 1; index >= 1; index--)
+              Positioned(
+                left: horizontalOffset * index,
+                top: verticalOffset * (visibleCount - 1 - index),
+                child: CompanionOrb(
+                  companion: companions[index],
+                  diameter: diameter * (1 - math.min(index, 3) * 0.1),
+                  wild: true,
+                  queued: true,
+                ),
+              ),
+            Positioned(
+              left: 0,
+              top: verticalOffset * (visibleCount - 1),
+              child: CompanionOrb(
+                companion: companions.first,
+                diameter: diameter,
+                wild: true,
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Text(
+                companions.length == 1
+                    ? 'WILD COMPANION'
+                    : 'WILD COMPANION  ·  ${companions.length - 1} QUEUED',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.amber,
+                  fontSize: compact ? 7 : 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: compact ? 0.6 : 0.9,
+                  shadows: const [Shadow(color: Colors.black, blurRadius: 5)],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

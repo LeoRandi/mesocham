@@ -82,6 +82,7 @@ class LocalChampionCatalog implements ChampionCatalog {
       selfDamage: definition.selfDamage,
       bonusPotencyIfTargetSwapped: definition.bonusPotencyIfTargetSwapped,
       cleansesHarmfulStatuses: definition.cleansesHarmfulStatuses,
+      companionEffect: definition.companionEffect,
     );
   }
 

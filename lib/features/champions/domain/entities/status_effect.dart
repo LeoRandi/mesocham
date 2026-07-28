@@ -18,14 +18,19 @@ class StatusApplication {
     required this.target,
     this.stacks = 1,
     this.durationTurns,
+    this.permanent = false,
+    this.delayFirstTick = true,
   });
 
   final StatusType type;
   final StatusTarget target;
   final int stacks;
   final int? durationTurns;
+  final bool permanent;
+  final bool delayFirstTick;
 
-  int? get resolvedDurationTurns => durationTurns ?? type.defaultDurationTurns;
+  int? get resolvedDurationTurns =>
+      permanent ? null : durationTurns ?? type.defaultDurationTurns;
 }
 
 extension StatusTypeRules on StatusType {

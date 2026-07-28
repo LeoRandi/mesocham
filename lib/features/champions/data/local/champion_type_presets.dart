@@ -102,7 +102,8 @@ abstract final class ChampionTypeMoveDefinitions {
       BattleGesture.paper: ChampionMovePreset(
         name: 'Llamada de ayuda',
         effect: MoveEffect.none,
-        effectDescription: 'Llama a un compañero durante 3 turnos.',
+        effectDescription: 'Llama y equipa a un compañero aleatorio.',
+        companionEffect: CompanionMoveEffect.summonRandom,
       ),
       BattleGesture.scissors: ChampionMovePreset(
         name: 'Alzar el vuelo',
@@ -149,8 +150,8 @@ abstract final class ChampionTypeMoveDefinitions {
       BattleGesture.paper: ChampionMovePreset(
         name: 'Robo',
         potency: 20,
-        effectDescription:
-            'Roba un compañero al equipo rival durante 3 turnos.',
+        effectDescription: '20 de daño y roba un compañero del campeón rival.',
+        companionEffect: CompanionMoveEffect.stealRandom,
       ),
       BattleGesture.scissors: ChampionMovePreset(
         name: 'Garra asesina',

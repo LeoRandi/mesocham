@@ -22,7 +22,8 @@ enum SpeciesCard {
   kingOfTheSkies(
     championType: ChampionType.wings,
     name: 'Rey de los cielos',
-    effectDescription: 'No battle effect yet.',
+    effectDescription:
+        'When equipped, summons and equips three different random companions.',
   ),
   shadowHunter(
     championType: ChampionType.claws,

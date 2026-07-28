@@ -1,4 +1,5 @@
 import '../../../champions/domain/entities/champion.dart';
+import '../../../companions/domain/entities/companion.dart';
 import '../../../species_cards/domain/entities/species_card.dart';
 import 'battle_species_card_slot.dart';
 import 'battle_status.dart';
@@ -85,7 +86,6 @@ class BattleTeam {
   final int activeIndex;
 
   Combatant get active => combatants[activeIndex];
-
   bool get isDefeated => combatants.every((combatant) => combatant.isDefeated);
 
   List<int> get swapIndexes => [
@@ -120,6 +120,15 @@ class BattleTeam {
 
   BattleTeam healActive(double amount) {
     return replaceActive(active.heal(amount));
+  }
+
+  BattleTeam healCombatant(int index, double amount) {
+    if (index < 0 ||
+        index >= combatants.length ||
+        combatants[index].isDefeated) {
+      return this;
+    }
+    return replaceCombatant(index, combatants[index].heal(amount));
   }
 
   BattleTeam damageAll(double amount) {
@@ -159,6 +168,19 @@ class BattleTeam {
     return replaceCombatant(index, combatants[index].applyStatus(application));
   }
 
+  BattleTeam applyEnemyStatusToActive(StatusApplication application) {
+    return replaceActive(
+      active.applyStatus(application, fromEnemyChampion: true),
+    );
+  }
+
+  BattleTeam applyEnemyStatusToIndex(int index, StatusApplication application) {
+    return replaceCombatant(
+      index,
+      combatants[index].applyStatus(application, fromEnemyChampion: true),
+    );
+  }
+
   BattleTeam removeStatusFromActive(StatusType type) {
     return replaceActive(active.removeStatus(type));
   }
@@ -191,6 +213,67 @@ class BattleTeam {
       combatants: nextCombatants,
       activeIndex: activeIndex,
       speciesCardSlots: nextSlots,
+    );
+  }
+
+  BattleTeam addCompanion({
+    required int bearerIndex,
+    required Companion companion,
+    bool activateEffectsImmediately = true,
+  }) {
+    if (bearerIndex < 0 ||
+        bearerIndex >= combatants.length ||
+        combatants[bearerIndex].isDefeated) {
+      return this;
+    }
+    return replaceCombatant(
+      bearerIndex,
+      combatants[bearerIndex].addCompanion(
+        companion,
+        activateEffectsImmediately: activateEffectsImmediately,
+      ),
+    );
+  }
+
+  BattleTeam removeCompanion({
+    required int bearerIndex,
+    required Companion companion,
+  }) {
+    if (bearerIndex < 0 || bearerIndex >= combatants.length) return this;
+    return replaceCombatant(
+      bearerIndex,
+      combatants[bearerIndex].removeCompanion(companion),
+    );
+  }
+
+  BattleTeam transferCompanions({
+    required int fromIndex,
+    required int toIndex,
+    bool activateEffectsImmediately = true,
+  }) {
+    if (fromIndex == toIndex ||
+        fromIndex < 0 ||
+        fromIndex >= combatants.length ||
+        toIndex < 0 ||
+        toIndex >= combatants.length) {
+      return this;
+    }
+
+    final transferredCompanions = combatants[fromIndex].companions;
+    if (transferredCompanions.isEmpty) return this;
+
+    final nextCombatants = [...combatants];
+    nextCombatants[fromIndex] = nextCombatants[fromIndex].removeAllCompanions();
+    for (final companion in transferredCompanions) {
+      nextCombatants[toIndex] = nextCombatants[toIndex].addCompanion(
+        companion,
+        activateEffectsImmediately: activateEffectsImmediately,
+      );
+    }
+    return BattleTeam(
+      combatants: nextCombatants,
+      activeIndex: activeIndex,
+      speciesCardSlots: _slotsAfterCombatantChanges(nextCombatants),
     );
   }
 

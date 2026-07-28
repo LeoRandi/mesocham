@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../champions/domain/entities/champion_move.dart';
+import '../../../companions/domain/entities/companion.dart';
 import '../../application/services/battle_session.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
@@ -44,6 +45,7 @@ class BattleController extends ChangeNotifier {
   bool get canShowdown => _state.canShowdown;
   bool get canSwap => _state.canSwap;
   ChampionMove? get selectedPlayerMove => _state.selectedPlayerMove;
+  List<Companion> get wildCompanionStack => _state.wildCompanionStack;
 
   void startFight() => _emit(_session.startFight(_state));
 

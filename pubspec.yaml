@@ -1,7 +1,7 @@
 name: mesocham
 description: "A responsive Fossil Race demo for Mesozoic Champions."
 
-version: 0.0.12
+version: 0.0.13
 
 environment:
   sdk: ^3.9.2
@@ -26,5 +26,6 @@ flutter:
   assets:
     - assets/images/
     - assets/species_cards/
+    - assets/companions/
     - assets/dinos/
     - assets/dinos/closeUps/

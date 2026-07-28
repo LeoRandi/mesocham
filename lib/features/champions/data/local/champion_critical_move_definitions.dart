@@ -336,9 +336,8 @@ abstract final class ChampionCriticalMoveDefinitions {
         name: 'Cuerpo ecosistema',
         potency: 20,
         effect: MoveEffect.healSelf,
-        effectDescription:
-            'Recupera 20 PS. La llamada de compañero queda pendiente del '
-            'sistema de compañeros.',
+        effectDescription: 'Recupera 20 PS y llama a un compañero aleatorio.',
+        companionEffect: CompanionMoveEffect.summonRandom,
         isCritical: true,
       ),
     },
@@ -370,8 +369,8 @@ abstract final class ChampionCriticalMoveDefinitions {
       BattleGesture.paper: ChampionMoveDefinition(
         name: 'Caza terrestre',
         potency: 40,
-        effectDescription:
-            '40 de daño. El robo queda pendiente del sistema de compañeros.',
+        effectDescription: '40 de daño y roba un compañero del campeón rival.',
+        companionEffect: CompanionMoveEffect.stealRandom,
         isCritical: true,
       ),
     },
@@ -380,9 +379,8 @@ abstract final class ChampionCriticalMoveDefinitions {
         name: 'Llamada de apareamiento',
         potency: 20,
         effect: MoveEffect.healSelf,
-        effectDescription:
-            'Recupera 20 PS. La llamada queda pendiente del sistema de '
-            'compañeros.',
+        effectDescription: 'Recupera 20 PS y llama a un compañero aleatorio.',
+        companionEffect: CompanionMoveEffect.summonRandom,
         isCritical: true,
       ),
     },
@@ -392,7 +390,8 @@ abstract final class ChampionCriticalMoveDefinitions {
         potency: 30,
         effect: MoveEffect.swapSelf,
         effectDescription:
-            '30 de daño y cambia al usuario por una reserva disponible.',
+            '30 de daño, cambia a una reserva y le traspasa sus compañeros.',
+        companionEffect: CompanionMoveEffect.transferOnSwap,
         isCritical: true,
       ),
     },
@@ -459,9 +458,9 @@ abstract final class ChampionCriticalMoveDefinitions {
         name: 'Ladrón de presa',
         potency: 20,
         effectDescription:
-            '20 de daño y recupera 20 PS. El robo queda pendiente del sistema '
-            'de compañeros.',
+            '20 de daño, roba un compañero rival y recupera 20 PS.',
         selfHealing: 20,
+        companionEffect: CompanionMoveEffect.stealRandom,
         isCritical: true,
       ),
     },

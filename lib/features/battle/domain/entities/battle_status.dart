@@ -25,7 +25,16 @@ class StatusCondition {
         type: type,
         stacks: stacks + application.stacks,
         remainingTurns: application.resolvedDurationTurns,
-        justApplied: true,
+        justApplied: application.delayFirstTick,
+      ),
+      StatusType.famine => StatusCondition(
+        type: type,
+        stacks: application.stacks > stacks ? application.stacks : stacks,
+        remainingTurns:
+            remainingTurns == null || application.resolvedDurationTurns == null
+            ? null
+            : application.resolvedDurationTurns,
+        justApplied: justApplied || application.delayFirstTick,
       ),
       StatusType.alphaMomentum => StatusCondition(
         type: type,
@@ -34,8 +43,10 @@ class StatusCondition {
       _ => StatusCondition(
         type: type,
         stacks: application.stacks > stacks ? application.stacks : stacks,
-        remainingTurns: application.resolvedDurationTurns,
-        justApplied: true,
+        remainingTurns: type == StatusType.famine && remainingTurns == null
+            ? null
+            : application.resolvedDurationTurns,
+        justApplied: application.delayFirstTick,
       ),
     };
   }

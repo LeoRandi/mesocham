@@ -1,4 +1,5 @@
 import '../../../champions/domain/entities/champion_move.dart';
+import '../../../companions/domain/entities/companion.dart';
 import 'battle_gesture.dart';
 import 'battle_resolution.dart';
 import 'battle_status.dart';
@@ -9,7 +10,7 @@ import 'combatant.dart';
 enum PendingBattleAction { showdown, swap }
 
 class BattleState {
-  const BattleState({
+  BattleState({
     required this.playerTeam,
     required this.opponentTeam,
     this.phase = BattlePhase.command,
@@ -20,7 +21,8 @@ class BattleState {
     this.pendingAction,
     this.pendingPlayerSpeciesCardIndex,
     this.resolutionSequence = 0,
-  });
+    List<Companion> wildCompanionStack = const [],
+  }) : wildCompanionStack = List.unmodifiable(wildCompanionStack);
 
   final BattleTeam playerTeam;
   final BattleTeam opponentTeam;
@@ -32,9 +34,12 @@ class BattleState {
   final PendingBattleAction? pendingAction;
   final int? pendingPlayerSpeciesCardIndex;
   final int resolutionSequence;
+  final List<Companion> wildCompanionStack;
 
   Combatant get player => playerTeam.active;
   Combatant get opponent => opponentTeam.active;
+  Companion? get wildCompanion =>
+      wildCompanionStack.isEmpty ? null : wildCompanionStack.first;
   List<int> get playerSwapIndexes => playerTeam.swapIndexes;
 
   bool get isFightOverlayVisible =>
@@ -77,6 +82,8 @@ class BattleState {
     int? pendingPlayerSpeciesCardIndex,
     bool clearPendingPlayerSpeciesCard = false,
     int? resolutionSequence,
+    List<Companion>? wildCompanionStack,
+    bool clearWildCompanionStack = false,
   }) {
     return BattleState(
       playerTeam: playerTeam ?? this.playerTeam,
@@ -101,6 +108,9 @@ class BattleState {
           ? null
           : pendingPlayerSpeciesCardIndex ?? this.pendingPlayerSpeciesCardIndex,
       resolutionSequence: resolutionSequence ?? this.resolutionSequence,
+      wildCompanionStack: clearWildCompanionStack
+          ? const []
+          : wildCompanionStack ?? this.wildCompanionStack,
     );
   }
 }
