@@ -15,6 +15,7 @@ class BattleState {
     required this.opponentTeam,
     this.phase = BattlePhase.command,
     this.playerGesture,
+    this.playerMoveOption,
     this.opponentGesture,
     this.lastResolution,
     this.previousTurn,
@@ -28,6 +29,7 @@ class BattleState {
   final BattleTeam opponentTeam;
   final BattlePhase phase;
   final BattleGesture? playerGesture;
+  final int? playerMoveOption;
   final BattleGesture? opponentGesture;
   final BattleResolution? lastResolution;
   final BattleTurn? previousTurn;
@@ -46,8 +48,14 @@ class BattleState {
       phase == BattlePhase.choosingMove ||
       (phase == BattlePhase.resolving && lastResolution == null);
   bool get isSwapOverlayVisible => phase == BattlePhase.swapping;
-  bool get canShowdown =>
-      phase == BattlePhase.choosingMove && playerGesture != null;
+  bool get canShowdown {
+    if (phase != BattlePhase.choosingMove || playerGesture == null) {
+      return false;
+    }
+    return selectedPlayerMove?.effect != MoveEffect.mixedChoice ||
+        playerMoveOption != null;
+  }
+
   bool get canSwap =>
       phase == BattlePhase.command &&
       playerSwapIndexes.isNotEmpty &&
@@ -71,6 +79,8 @@ class BattleState {
     BattlePhase? phase,
     BattleGesture? playerGesture,
     bool clearPlayerGesture = false,
+    int? playerMoveOption,
+    bool clearPlayerMoveOption = false,
     BattleGesture? opponentGesture,
     bool clearOpponentGesture = false,
     BattleResolution? lastResolution,
@@ -92,6 +102,9 @@ class BattleState {
       playerGesture: clearPlayerGesture
           ? null
           : playerGesture ?? this.playerGesture,
+      playerMoveOption: clearPlayerMoveOption
+          ? null
+          : playerMoveOption ?? this.playerMoveOption,
       opponentGesture: clearOpponentGesture
           ? null
           : opponentGesture ?? this.opponentGesture,

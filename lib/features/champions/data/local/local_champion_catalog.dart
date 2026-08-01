@@ -75,14 +75,28 @@ class LocalChampionCatalog implements ChampionCatalog {
               ? 'Ataque crítico de especie.'
               : 'Ataque básico de tipo.'),
       statusApplications: definition.statusApplications,
+      reservePotency: definition.reservePotency,
+      followUpPotency: definition.followUpPotency,
       effectTurns: definition.effectTurns,
       isCritical: definition.isCritical,
       dealsFullDamageOnDraw: definition.dealsFullDamageOnDraw,
       selfHealing: definition.selfHealing,
       selfDamage: definition.selfDamage,
       bonusPotencyIfTargetSwapped: definition.bonusPotencyIfTargetSwapped,
+      bonusPotencyIfTargetBleeding: definition.bonusPotencyIfTargetBleeding,
+      bonusPotencyPerRoundWithoutWinning:
+          definition.bonusPotencyPerRoundWithoutWinning,
+      bonusPotencyIfAtOrBelowHalfHealth:
+          definition.bonusPotencyIfAtOrBelowHalfHealth,
+      maxHealthGrowth: definition.maxHealthGrowth,
       cleansesHarmfulStatuses: definition.cleansesHarmfulStatuses,
+      transfersHarmfulStatusesToOpponent:
+          definition.transfersHarmfulStatusesToOpponent,
       companionEffect: definition.companionEffect,
+      randomHarmfulStatusCount: definition.randomHarmfulStatusCount,
+      randomBeneficialStatusCount: definition.randomBeneficialStatusCount,
+      clearsOpponentCompanions: definition.clearsOpponentCompanions,
+      mixedMoveChoice: definition.mixedMoveChoice,
     );
   }
 

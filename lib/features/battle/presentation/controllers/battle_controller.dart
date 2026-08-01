@@ -48,6 +48,7 @@ class BattleController extends ChangeNotifier {
   BattleTeam get opponentTeam => _state.opponentTeam;
   BattlePhase get phase => _state.phase;
   BattleGesture? get playerGesture => _state.playerGesture;
+  int? get playerMoveOption => _state.playerMoveOption;
   BattleResolution? get lastResolution => _state.lastResolution;
   int? get pendingPlayerSpeciesCardIndex =>
       _state.pendingPlayerSpeciesCardIndex;
@@ -58,6 +59,8 @@ class BattleController extends ChangeNotifier {
   bool get canShowdown => _state.canShowdown;
   bool get canSwap => _state.canSwap;
   ChampionMove? get selectedPlayerMove => _state.selectedPlayerMove;
+  bool get requiresPlayerMoveOption =>
+      selectedPlayerMove?.effect == MoveEffect.mixedChoice;
   List<Companion> get wildCompanionStack => _state.wildCompanionStack;
   List<String> get combatLog => List.unmodifiable(_combatLog);
 
@@ -69,6 +72,10 @@ class BattleController extends ChangeNotifier {
 
   void selectPlayerGesture(BattleGesture gesture) {
     _emit(_session.selectPlayerGesture(_state, gesture));
+  }
+
+  void selectPlayerMoveOption(int option) {
+    _emit(_session.selectPlayerMoveOption(_state, option));
   }
 
   void selectPlayerSpeciesCard(int index) {

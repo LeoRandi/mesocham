@@ -10,6 +10,9 @@ class Combatant {
     required this.champion,
     required this.currentHealth,
     this.maxHealthPenalty = 0,
+    this.battleMaxHealthBonus = 0,
+    this.maxHealthGrowthUsed = false,
+    this.roundsWithoutWinning = 0,
     List<StatusCondition> statuses = const [],
     List<Companion> companions = const [],
     this.equippedSpeciesCard,
@@ -26,6 +29,9 @@ class Combatant {
   final Champion champion;
   final double currentHealth;
   final double maxHealthPenalty;
+  final double battleMaxHealthBonus;
+  final bool maxHealthGrowthUsed;
+  final int roundsWithoutWinning;
   final List<StatusCondition> statuses;
   final List<Companion> companions;
   final SpeciesCard? equippedSpeciesCard;
@@ -37,7 +43,8 @@ class Combatant {
       math.pow(2, companionCount(Companion.beetle)).toDouble();
   double get companionMaxHealthBonus =>
       companionValue(20.0 * companionCount(Companion.ammonoidea));
-  double get baseMaxHealth => champion.maxHealth + companionMaxHealthBonus;
+  double get baseMaxHealth =>
+      champion.maxHealth + battleMaxHealthBonus + companionMaxHealthBonus;
   double get maxHealth =>
       (baseMaxHealth - maxHealthPenalty).clamp(1, baseMaxHealth).toDouble();
 
@@ -81,6 +88,23 @@ class Combatant {
     return copyWith(
       currentHealth: currentHealth.clamp(0, nextMaxHealth).toDouble(),
       maxHealthPenalty: nextPenalty,
+    );
+  }
+
+  Combatant growMaxHealthOnce(double amount) {
+    if (isDefeated || maxHealthGrowthUsed || amount <= 0) return this;
+    final nextBonus = battleMaxHealthBonus + amount;
+    final nextBaseMaxHealth =
+        champion.maxHealth + nextBonus + companionMaxHealthBonus;
+    final nextMaxHealth = (nextBaseMaxHealth - maxHealthPenalty)
+        .clamp(1, nextBaseMaxHealth)
+        .toDouble();
+    return copyWith(
+      currentHealth: (currentHealth + amount)
+          .clamp(0, nextMaxHealth)
+          .toDouble(),
+      battleMaxHealthBonus: nextBonus,
+      maxHealthGrowthUsed: true,
     );
   }
 
@@ -166,6 +190,7 @@ class Combatant {
     final nextCompanions = [...companions]..removeAt(companionIndex);
     final nextBaseMaxHealth =
         champion.maxHealth +
+        battleMaxHealthBonus +
         (_companionBonus(nextCompanions, Companion.ammonoidea, 20));
     final nextPenalty = maxHealthPenalty
         .clamp(0, nextBaseMaxHealth - 1)
@@ -208,6 +233,8 @@ class Combatant {
         );
       } else if (status.type == StatusType.famine) {
         nextCombatant = nextCombatant.reduceMaxHealth(10.0 * status.stacks);
+      } else if (status.type == StatusType.groundedRegeneration) {
+        nextCombatant = nextCombatant.heal(30);
       }
 
       final tickedStatus = status.tick();
@@ -248,6 +275,9 @@ class Combatant {
   Combatant copyWith({
     double? currentHealth,
     double? maxHealthPenalty,
+    double? battleMaxHealthBonus,
+    bool? maxHealthGrowthUsed,
+    int? roundsWithoutWinning,
     List<StatusCondition>? statuses,
     List<Companion>? companions,
     SpeciesCard? equippedSpeciesCard,
@@ -257,6 +287,9 @@ class Combatant {
       champion: champion,
       currentHealth: currentHealth ?? this.currentHealth,
       maxHealthPenalty: maxHealthPenalty ?? this.maxHealthPenalty,
+      battleMaxHealthBonus: battleMaxHealthBonus ?? this.battleMaxHealthBonus,
+      maxHealthGrowthUsed: maxHealthGrowthUsed ?? this.maxHealthGrowthUsed,
+      roundsWithoutWinning: roundsWithoutWinning ?? this.roundsWithoutWinning,
       statuses: statuses ?? this.statuses,
       companions: companions ?? this.companions,
       equippedSpeciesCard: clearEquippedSpeciesCard

@@ -78,7 +78,10 @@ extension StatusTypeLabel on StatusType {
     StatusType.famine => 'Hambruna',
     StatusType.jaggedScales => 'Escamas dentadas',
     StatusType.secondaryImmunity => 'Inmunidad secundaria',
+    StatusType.totalCover => 'Cubierta total',
     StatusType.swapLocked => 'Cambio bloqueado',
+    StatusType.spikeEnclosure => 'Cerco de púas',
+    StatusType.groundedRegeneration => 'Vientre a tierra',
   };
 
   String get shortLabel => switch (this) {
@@ -90,6 +93,9 @@ extension StatusTypeLabel on StatusType {
     StatusType.famine => 'HAM',
     StatusType.jaggedScales => 'DEN',
     StatusType.secondaryImmunity => 'INM',
+    StatusType.totalCover => 'CUB',
     StatusType.swapLocked => 'BLQ',
+    StatusType.spikeEnclosure => 'CER',
+    StatusType.groundedRegeneration => 'VIE',
   };
 }

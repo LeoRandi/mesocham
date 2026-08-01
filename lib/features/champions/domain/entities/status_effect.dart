@@ -7,10 +7,13 @@ enum StatusType {
   famine,
   jaggedScales,
   secondaryImmunity,
+  totalCover,
   swapLocked,
+  spikeEnclosure,
+  groundedRegeneration,
 }
 
-enum StatusTarget { self, opponent }
+enum StatusTarget { self, selfTeam, opponent, opponentTeam }
 
 class StatusApplication {
   const StatusApplication({
@@ -35,7 +38,7 @@ class StatusApplication {
 
 extension StatusTypeRules on StatusType {
   int? get defaultDurationTurns => switch (this) {
-    StatusType.alphaMomentum => null,
+    StatusType.alphaMomentum || StatusType.totalCover => null,
     StatusType.bleeding => 5,
     StatusType.swapLocked => 1,
     _ => 3,
@@ -46,10 +49,13 @@ extension StatusTypeRules on StatusType {
     StatusType.bleeding ||
     StatusType.brokenBone ||
     StatusType.famine ||
-    StatusType.swapLocked => true,
+    StatusType.swapLocked ||
+    StatusType.spikeEnclosure => true,
     StatusType.alphaMomentum ||
     StatusType.protectiveScales ||
     StatusType.jaggedScales ||
-    StatusType.secondaryImmunity => false,
+    StatusType.secondaryImmunity ||
+    StatusType.totalCover ||
+    StatusType.groundedRegeneration => false,
   };
 }

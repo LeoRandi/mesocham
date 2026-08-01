@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../champions/domain/entities/champion_move.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
 import '../../../companions/domain/entities/companion.dart';
@@ -53,6 +54,10 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   final _moveFocusNodes = List.generate(
     3,
     (index) => FocusNode(debugLabel: 'Battle move ${index + 1}'),
+  );
+  final _mixedMoveOptionFocusNodes = List.generate(
+    3,
+    (index) => FocusNode(debugLabel: 'Mixed move option ${index + 1}'),
   );
   final _swapFocusNodes = List.generate(
     3,
@@ -175,10 +180,16 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
 
   List<FocusNode?> get _numberedFocusNodes => switch (_controller!.phase) {
     BattlePhase.command => _battleActionFocusNodes,
-    BattlePhase.choosingMove => [
-      ..._moveFocusNodes,
-      if (_controller!.canShowdown) _showdownFocusNode else null,
-    ],
+    BattlePhase.choosingMove =>
+      _controller!.requiresPlayerMoveOption
+          ? [
+              ..._mixedMoveOptionFocusNodes,
+              if (_controller!.canShowdown) _showdownFocusNode else null,
+            ]
+          : [
+              ..._moveFocusNodes,
+              if (_controller!.canShowdown) _showdownFocusNode else null,
+            ],
     BattlePhase.resolving => const [],
     BattlePhase.swapping => _swapFocusNodes,
     BattlePhase.gameOver => [_gameOverMenuFocusNode, _rematchFocusNode],
@@ -190,6 +201,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     for (final focusNode in [
       ..._battleActionFocusNodes,
       ..._moveFocusNodes,
+      ..._mixedMoveOptionFocusNodes,
       ..._swapFocusNodes,
       _showdownFocusNode,
       _gameOverMenuFocusNode,
@@ -249,6 +261,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                         combatLogOpen: _combatLogOpen,
                         battleActionFocusNodes: _battleActionFocusNodes,
                         moveFocusNodes: _moveFocusNodes,
+                        mixedMoveOptionFocusNodes: _mixedMoveOptionFocusNodes,
                         swapFocusNodes: _swapFocusNodes,
                         showdownFocusNode: _showdownFocusNode,
                         gameOverMenuFocusNode: _gameOverMenuFocusNode,
@@ -325,6 +338,7 @@ class _BattleRoom extends StatelessWidget {
     required this.combatLogOpen,
     required this.battleActionFocusNodes,
     required this.moveFocusNodes,
+    required this.mixedMoveOptionFocusNodes,
     required this.swapFocusNodes,
     required this.showdownFocusNode,
     required this.gameOverMenuFocusNode,
@@ -347,6 +361,7 @@ class _BattleRoom extends StatelessWidget {
   final bool combatLogOpen;
   final List<FocusNode> battleActionFocusNodes;
   final List<FocusNode> moveFocusNodes;
+  final List<FocusNode> mixedMoveOptionFocusNodes;
   final List<FocusNode> swapFocusNodes;
   final FocusNode showdownFocusNode;
   final FocusNode gameOverMenuFocusNode;
@@ -462,6 +477,7 @@ class _BattleRoom extends StatelessWidget {
           controller: controller,
           compact: compact,
           moveFocusNodes: moveFocusNodes,
+          mixedMoveOptionFocusNodes: mixedMoveOptionFocusNodes,
           showdownFocusNode: showdownFocusNode,
           onShowdown: onShowdown,
         ),
@@ -1269,6 +1285,7 @@ class _MoveSelectionLayer extends StatelessWidget {
     required this.controller,
     required this.compact,
     required this.moveFocusNodes,
+    required this.mixedMoveOptionFocusNodes,
     required this.showdownFocusNode,
     required this.onShowdown,
   });
@@ -1276,6 +1293,7 @@ class _MoveSelectionLayer extends StatelessWidget {
   final BattleController controller;
   final bool compact;
   final List<FocusNode> moveFocusNodes;
+  final List<FocusNode> mixedMoveOptionFocusNodes;
   final FocusNode showdownFocusNode;
   final VoidCallback onShowdown;
 
@@ -1326,6 +1344,22 @@ class _MoveSelectionLayer extends StatelessWidget {
                   ),
                 ],
               ),
+              if (selecting && controller.requiresPlayerMoveOption)
+                Positioned(
+                  left: compact ? 8 : 28,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: _MixedMoveOptionPanel(
+                      compact: compact,
+                      choiceType:
+                          controller.selectedPlayerMove!.mixedMoveChoice,
+                      selectedOption: controller.playerMoveOption,
+                      focusNodes: mixedMoveOptionFocusNodes,
+                      onSelected: controller.selectPlayerMoveOption,
+                    ),
+                  ),
+                ),
               Positioned(
                 right: compact ? 10 : 42,
                 top: 0,
@@ -1366,6 +1400,92 @@ class _MoveSelectionLayer extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MixedMoveOptionPanel extends StatelessWidget {
+  const _MixedMoveOptionPanel({
+    required this.compact,
+    required this.choiceType,
+    required this.selectedOption,
+    required this.focusNodes,
+    required this.onSelected,
+  }) : assert(focusNodes.length == 3);
+
+  final bool compact;
+  final MixedMoveChoice choiceType;
+  final int? selectedOption;
+  final List<FocusNode> focusNodes;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, labels) = switch (choiceType) {
+      MixedMoveChoice.falseEvolution => (
+        'EVOLUCIÓN FALSA',
+        const ['CURA AL EQUIPO', 'DAÑO Y RELEVO', 'RELEVO RIVAL'],
+      ),
+      MixedMoveChoice.arborealVersatility => (
+        'VERSATILIDAD ARBORÍCOLA',
+        const ['40 DE DAÑO', 'CURA Y LIMPIEZA', 'DAÑO Y RELEVO'],
+      ),
+    };
+    return Container(
+      width: compact ? 126 : 178,
+      padding: EdgeInsets.all(compact ? 8 : 12),
+      decoration: BoxDecoration(
+        color: AppColors.ink.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.7)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 12, spreadRadius: 1),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.amber,
+              fontSize: compact ? 8 : 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+            ),
+          ),
+          SizedBox(height: compact ? 5 : 8),
+          for (var index = 0; index < labels.length; index++) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ChoiceChip(
+                key: ValueKey('mixed-move-option-$index'),
+                focusNode: focusNodes[index],
+                label: Text(labels[index], textAlign: TextAlign.center),
+                selected: selectedOption == index,
+                onSelected: (_) => onSelected(index),
+                labelStyle: TextStyle(
+                  color: selectedOption == index
+                      ? AppColors.ink
+                      : AppColors.bone,
+                  fontSize: compact ? 7 : 9,
+                  fontWeight: FontWeight.w800,
+                ),
+                selectedColor: AppColors.amber,
+                backgroundColor: AppColors.charcoal,
+                side: BorderSide(
+                  color: selectedOption == index
+                      ? AppColors.amber
+                      : AppColors.bone.withValues(alpha: 0.35),
+                ),
+                showCheckmark: false,
+              ),
+            ),
+            if (index != labels.length - 1) SizedBox(height: compact ? 3 : 5),
+          ],
+        ],
       ),
     );
   }
@@ -1589,7 +1709,10 @@ class _StatusStrip extends StatelessWidget {
     StatusType.famine => const Color(0xFFA36B34),
     StatusType.jaggedScales => const Color(0xFFC7D16B),
     StatusType.secondaryImmunity => AppColors.teal,
+    StatusType.totalCover => const Color(0xFFB8C6D9),
     StatusType.swapLocked => AppColors.danger,
+    StatusType.spikeEnclosure => const Color(0xFFD99154),
+    StatusType.groundedRegeneration => const Color(0xFF78A66A),
   };
 }
 

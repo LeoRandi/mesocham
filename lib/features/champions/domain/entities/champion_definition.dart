@@ -9,14 +9,25 @@ class ChampionMoveDefinition {
     this.effectDescription,
     this.effect = MoveEffect.damage,
     this.statusApplications = const [],
+    this.reservePotency = 0,
+    this.followUpPotency = 0,
     this.effectTurns = 0,
     this.isCritical = false,
     this.dealsFullDamageOnDraw = false,
     this.selfHealing = 0,
     this.selfDamage = 0,
     this.bonusPotencyIfTargetSwapped = 0,
+    this.bonusPotencyIfTargetBleeding = 0,
+    this.bonusPotencyPerRoundWithoutWinning = 0,
+    this.bonusPotencyIfAtOrBelowHalfHealth = 0,
+    this.maxHealthGrowth = 0,
     this.cleansesHarmfulStatuses = false,
+    this.transfersHarmfulStatusesToOpponent = false,
     this.companionEffect = CompanionMoveEffect.none,
+    this.randomHarmfulStatusCount = 0,
+    this.randomBeneficialStatusCount = 0,
+    this.clearsOpponentCompanions = false,
+    this.mixedMoveChoice = MixedMoveChoice.falseEvolution,
   });
 
   final String name;
@@ -24,14 +35,25 @@ class ChampionMoveDefinition {
   final String? effectDescription;
   final MoveEffect effect;
   final List<StatusApplication> statusApplications;
+  final double reservePotency;
+  final double followUpPotency;
   final int effectTurns;
   final bool isCritical;
   final bool dealsFullDamageOnDraw;
   final double selfHealing;
   final double selfDamage;
   final double bonusPotencyIfTargetSwapped;
+  final double bonusPotencyIfTargetBleeding;
+  final double bonusPotencyPerRoundWithoutWinning;
+  final double bonusPotencyIfAtOrBelowHalfHealth;
+  final double maxHealthGrowth;
   final bool cleansesHarmfulStatuses;
+  final bool transfersHarmfulStatusesToOpponent;
   final CompanionMoveEffect companionEffect;
+  final int randomHarmfulStatusCount;
+  final int randomBeneficialStatusCount;
+  final bool clearsOpponentCompanions;
+  final MixedMoveChoice mixedMoveChoice;
 }
 
 class ChampionDefinition {

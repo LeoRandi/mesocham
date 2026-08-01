@@ -88,10 +88,16 @@ class BattleTeam {
   Combatant get active => combatants[activeIndex];
   bool get isDefeated => combatants.every((combatant) => combatant.isDefeated);
 
-  List<int> get swapIndexes => [
-    for (var index = 0; index < combatants.length; index++)
-      if (index != activeIndex && !combatants[index].isDefeated) index,
-  ];
+  List<int> get swapIndexes {
+    if (!active.isDefeated &&
+        active.hasStatus(StatusType.groundedRegeneration)) {
+      return const [];
+    }
+    return [
+      for (var index = 0; index < combatants.length; index++)
+        if (index != activeIndex && !combatants[index].isDefeated) index,
+    ];
+  }
 
   int? get firstReserveIndex {
     for (final index in swapIndexes) {
@@ -122,6 +128,10 @@ class BattleTeam {
     return replaceActive(active.heal(amount));
   }
 
+  BattleTeam growActiveMaxHealthOnce(double amount) {
+    return replaceActive(active.growMaxHealthOnce(amount));
+  }
+
   BattleTeam healCombatant(int index, double amount) {
     if (index < 0 ||
         index >= combatants.length ||
@@ -150,6 +160,53 @@ class BattleTeam {
     );
   }
 
+  BattleTeam redistributeCurrentHealthEvenly() {
+    final survivingIndexes = [
+      for (var index = 0; index < combatants.length; index++)
+        if (!combatants[index].isDefeated) index,
+    ];
+    if (survivingIndexes.length < 2) return this;
+
+    var remainingHealth = survivingIndexes.fold<double>(
+      0,
+      (total, index) => total + combatants[index].currentHealth,
+    );
+    final pendingIndexes = [...survivingIndexes];
+    final allocations = <int, double>{};
+
+    while (pendingIndexes.isNotEmpty) {
+      final evenShare = remainingHealth / pendingIndexes.length;
+      final cappedIndexes = [
+        for (final index in pendingIndexes)
+          if (combatants[index].maxHealth <= evenShare) index,
+      ];
+      if (cappedIndexes.isEmpty) {
+        for (final index in pendingIndexes) {
+          allocations[index] = evenShare;
+        }
+        break;
+      }
+      for (final index in cappedIndexes) {
+        final allocation = combatants[index].maxHealth;
+        allocations[index] = allocation;
+        remainingHealth -= allocation;
+        pendingIndexes.remove(index);
+      }
+    }
+
+    final nextCombatants = [...combatants];
+    for (final entry in allocations.entries) {
+      nextCombatants[entry.key] = nextCombatants[entry.key].copyWith(
+        currentHealth: entry.value,
+      );
+    }
+    return BattleTeam(
+      combatants: nextCombatants,
+      activeIndex: activeIndex,
+      speciesCardSlots: speciesCardSlots,
+    );
+  }
+
   BattleTeam damageFirstReserve(double amount) {
     final targetIndex = firstReserveIndex;
     return targetIndex == null
@@ -168,6 +225,17 @@ class BattleTeam {
     return replaceCombatant(index, combatants[index].applyStatus(application));
   }
 
+  BattleTeam applyStatusToAll(StatusApplication application) {
+    return BattleTeam(
+      combatants: [
+        for (final combatant in combatants)
+          combatant.isDefeated ? combatant : combatant.applyStatus(application),
+      ],
+      activeIndex: activeIndex,
+      speciesCardSlots: speciesCardSlots,
+    );
+  }
+
   BattleTeam applyEnemyStatusToActive(StatusApplication application) {
     return replaceActive(
       active.applyStatus(application, fromEnemyChampion: true),
@@ -181,8 +249,25 @@ class BattleTeam {
     );
   }
 
+  BattleTeam applyEnemyStatusToAll(StatusApplication application) {
+    return BattleTeam(
+      combatants: [
+        for (final combatant in combatants)
+          combatant.isDefeated
+              ? combatant
+              : combatant.applyStatus(application, fromEnemyChampion: true),
+      ],
+      activeIndex: activeIndex,
+      speciesCardSlots: speciesCardSlots,
+    );
+  }
+
   BattleTeam removeStatusFromActive(StatusType type) {
     return replaceActive(active.removeStatus(type));
+  }
+
+  BattleTeam removeStatusFromIndex(int index, StatusType type) {
+    return replaceCombatant(index, combatants[index].removeStatus(type));
   }
 
   BattleTeam clearHarmfulStatusesFromActive() {
@@ -246,6 +331,10 @@ class BattleTeam {
     );
   }
 
+  BattleTeam removeAllCompanionsFromActive() {
+    return replaceActive(active.removeAllCompanions());
+  }
+
   BattleTeam transferCompanions({
     required int fromIndex,
     required int toIndex,
@@ -288,15 +377,39 @@ class BattleTeam {
     );
   }
 
+  BattleTeam recordRoundForCombatant(int index, {required bool won}) {
+    if (index < 0 || index >= combatants.length) return this;
+    final combatant = combatants[index];
+    final roundsWithoutWinning = index == activeIndex && !combatant.isDefeated
+        ? (won ? 0 : combatant.roundsWithoutWinning + 1)
+        : 0;
+    return replaceCombatant(
+      index,
+      combatant.copyWith(roundsWithoutWinning: roundsWithoutWinning),
+    );
+  }
+
   BattleTeam swapTo(int index) {
     if (!swapIndexes.contains(index)) return this;
+    final spikeEnclosureActive = active.hasStatus(StatusType.spikeEnclosure);
     final nextCombatants = [...combatants];
-    nextCombatants[activeIndex] = active.clearStatuses();
-    return BattleTeam(
+    nextCombatants[activeIndex] = active.clearStatuses().copyWith(
+      roundsWithoutWinning: 0,
+    );
+    nextCombatants[index] = nextCombatants[index].copyWith(
+      roundsWithoutWinning: 0,
+    );
+    if (spikeEnclosureActive) {
+      nextCombatants[index] = nextCombatants[index].takeDamage(20);
+    }
+    final swappedTeam = BattleTeam(
       combatants: nextCombatants,
       activeIndex: index,
       speciesCardSlots: speciesCardSlots,
     );
+    return swappedTeam.active.isDefeated
+        ? swappedTeam.promoteIfActiveDefeated()
+        : swappedTeam;
   }
 
   BattleTeam swapToFirstReserve() {

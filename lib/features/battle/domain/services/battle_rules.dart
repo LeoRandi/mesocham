@@ -17,6 +17,7 @@ abstract interface class BattleRules {
     required BattleTeam opponentTeam,
     required BattleGesture playerGesture,
     required BattleGesture opponentGesture,
+    int? playerMoveOption,
   });
 
   BattleResolution resolveGuaranteedOpponentMove({
@@ -27,10 +28,28 @@ abstract interface class BattleRules {
 }
 
 class StandardBattleRules implements BattleRules {
-  StandardBattleRules({required CompanionRandomizer companionRandomizer})
-    : _companionRandomizer = companionRandomizer;
+  StandardBattleRules({
+    required CompanionRandomizer companionRandomizer,
+    math.Random? random,
+  }) : _companionRandomizer = companionRandomizer,
+       _random = random ?? math.Random();
 
   final CompanionRandomizer _companionRandomizer;
+  final math.Random _random;
+
+  static const _randomHarmfulStatuses = [
+    StatusType.bleeding,
+    StatusType.intimidation,
+    StatusType.brokenBone,
+    StatusType.famine,
+  ];
+
+  static const _randomBeneficialStatuses = [
+    StatusType.alphaMomentum,
+    StatusType.protectiveScales,
+    StatusType.jaggedScales,
+    StatusType.secondaryImmunity,
+  ];
 
   @override
   BattleResolution resolve({
@@ -38,6 +57,7 @@ class StandardBattleRules implements BattleRules {
     required BattleTeam opponentTeam,
     required BattleGesture playerGesture,
     required BattleGesture opponentGesture,
+    int? playerMoveOption,
   }) {
     final playerMove = playerTeam.active.champion.moveFor(playerGesture);
     final opponentMove = opponentTeam.active.champion.moveFor(opponentGesture);
@@ -60,6 +80,7 @@ class StandardBattleRules implements BattleRules {
         applySecondaryEffects:
             playerTeam.active.equippedSpeciesCard ==
             SpeciesCard.unstoppableClash,
+        mixedChoiceOverride: playerMoveOption,
       );
       final opponentApplication = _applyMove(
         userTeam: playerApplication.targetTeam,
@@ -90,6 +111,7 @@ class StandardBattleRules implements BattleRules {
           targetTeam: opponentTeam,
           move: playerMove,
           potency: playerMove.potency,
+          mixedChoiceOverride: playerMoveOption,
         ),
         bearerIndex: playerTeam.activeIndex,
         amount: companionHealing,
@@ -164,8 +186,18 @@ class StandardBattleRules implements BattleRules {
     required _MoveApplication playerApplication,
     required _MoveApplication opponentApplication,
   }) {
-    final playerEndTurn = _finishTurn(playerApplication.userTeam);
-    final opponentEndTurn = _finishTurn(opponentApplication.userTeam);
+    final trackedPlayerTeam = playerApplication.userTeam
+        .recordRoundForCombatant(
+          originalPlayerTeam.activeIndex,
+          won: outcome == BattleOutcome.playerVictory,
+        );
+    final trackedOpponentTeam = opponentApplication.userTeam
+        .recordRoundForCombatant(
+          originalOpponentTeam.activeIndex,
+          won: outcome == BattleOutcome.opponentVictory,
+        );
+    final playerEndTurn = _finishTurn(trackedPlayerTeam);
+    final opponentEndTurn = _finishTurn(trackedOpponentTeam);
     final nextPlayerTeam = playerEndTurn.team;
     final nextOpponentTeam = opponentEndTurn.team;
 
@@ -243,6 +275,7 @@ class StandardBattleRules implements BattleRules {
   ({BattleTeam team, double healing, List<_EndTurnEffectEvent> effectEvents})
   _finishTurn(BattleTeam team) {
     final effectEvents = <_EndTurnEffectEvent>[];
+    var healing = 0.0;
     for (var index = 0; index < team.combatants.length; index++) {
       var combatant = team.combatants[index];
       for (final status in combatant.statuses) {
@@ -275,25 +308,40 @@ class StandardBattleRules implements BattleRules {
             );
           }
           combatant = reduced;
+        } else if (status.type == StatusType.groundedRegeneration) {
+          final healed = combatant.heal(30);
+          final actualHealing = healed.currentHealth - combatant.currentHealth;
+          if (actualHealing > 0) {
+            healing += actualHealing;
+            effectEvents.add(
+              _EndTurnEffectEvent(
+                combatantIndex: index,
+                type: BattleEffectType.healing,
+                amount: actualHealing,
+              ),
+            );
+          }
+          combatant = healed;
         }
       }
     }
 
     var nextTeam = team.tickStatuses();
-    var healing = 0.0;
     final active = nextTeam.active;
 
     if (!active.isDefeated &&
         active.equippedSpeciesCard == SpeciesCard.colossusAmongGiants) {
       final healthBeforeRegeneration = active.currentHealth;
       nextTeam = nextTeam.healActive(active.maxHealth * 0.08);
-      healing = nextTeam.active.currentHealth - healthBeforeRegeneration;
-      if (healing > 0) {
+      final speciesHealing =
+          nextTeam.active.currentHealth - healthBeforeRegeneration;
+      healing += speciesHealing;
+      if (speciesHealing > 0) {
         effectEvents.add(
           _EndTurnEffectEvent(
             combatantIndex: nextTeam.activeIndex,
             type: BattleEffectType.healing,
-            amount: healing,
+            amount: speciesHealing,
           ),
         );
       }
@@ -325,9 +373,26 @@ class StandardBattleRules implements BattleRules {
     required double potency,
     bool applySecondaryEffects = true,
     bool targetSwappedThisTurn = false,
+    int? mixedChoiceOverride,
   }) {
+    if (mixedChoiceOverride != null &&
+        (mixedChoiceOverride < 0 || mixedChoiceOverride > 2)) {
+      throw RangeError.range(mixedChoiceOverride, 0, 2, 'mixedChoiceOverride');
+    }
     final resolutions =
         userTeam.active.equippedSpeciesCard == SpeciesCard.packPower ? 2 : 1;
+    final mixedChoice = move.effect == MoveEffect.mixedChoice
+        ? mixedChoiceOverride ?? _random.nextInt(3)
+        : null;
+    final mixedChoiceDamagesActive =
+        applySecondaryEffects &&
+        mixedChoice != null &&
+        _mixedChoiceDamagesActive(move.mixedMoveChoice, mixedChoice);
+    final coveredTargetIndex = targetTeam.activeIndex;
+    final consumesTotalCover =
+        targetTeam.active.hasStatus(StatusType.totalCover) &&
+        (mixedChoiceDamagesActive ||
+            _moveDamagesActive(move.effect, targetTeam));
     var aggregate = _MoveApplication.noop(
       userTeam: userTeam,
       targetTeam: targetTeam,
@@ -342,6 +407,7 @@ class StandardBattleRules implements BattleRules {
         applySecondaryEffects: applySecondaryEffects,
         performSwap: resolution == resolutions - 1,
         targetSwappedThisTurn: targetSwappedThisTurn,
+        mixedChoice: mixedChoice,
       );
       aggregate = application.copyWith(
         activeDamage: aggregate.activeDamage + application.activeDamage,
@@ -350,6 +416,15 @@ class StandardBattleRules implements BattleRules {
         swapped: aggregate.swapped || application.swapped,
         targetSwapped: aggregate.targetSwapped || application.targetSwapped,
         effectEvents: [...aggregate.effectEvents, ...application.effectEvents],
+      );
+    }
+
+    if (consumesTotalCover) {
+      aggregate = aggregate.copyWith(
+        targetTeam: aggregate.targetTeam.removeStatusFromIndex(
+          coveredTargetIndex,
+          StatusType.totalCover,
+        ),
       );
     }
 
@@ -364,11 +439,41 @@ class StandardBattleRules implements BattleRules {
     required bool applySecondaryEffects,
     required bool performSwap,
     required bool targetSwappedThisTurn,
+    required int? mixedChoice,
   }) {
+    final mixedChoiceDamagesActive =
+        applySecondaryEffects &&
+        mixedChoice != null &&
+        _mixedChoiceDamagesActive(move.mixedMoveChoice, mixedChoice);
+    final blocksTargetSecondaryEffects =
+        targetTeam.active.hasStatus(StatusType.totalCover) &&
+        (mixedChoiceDamagesActive ||
+            _moveDamagesActive(move.effect, targetTeam));
     final damagePotency = _speciesModifiedDamagePotency(
       attacker: userTeam.active,
+      target: targetTeam.active,
       move: move,
       potency: potency,
+      targetSwappedThisTurn: targetSwappedThisTurn,
+    );
+    final reservePotencyScale = move.potency == 0
+        ? 1.0
+        : potency / move.potency;
+    final reserveDamagePotency = _speciesModifiedDamagePotency(
+      attacker: userTeam.active,
+      target: targetTeam.active,
+      move: move,
+      potency: move.reservePotency * reservePotencyScale,
+      targetSwappedThisTurn: targetSwappedThisTurn,
+    );
+    final followUpPotencyScale = move.potency == 0
+        ? 1.0
+        : potency / move.potency;
+    final followUpDamagePotency = _speciesModifiedDamagePotency(
+      attacker: userTeam.active,
+      target: targetTeam.active,
+      move: move,
+      potency: move.followUpPotency * followUpPotencyScale,
       targetSwappedThisTurn: targetSwappedThisTurn,
     );
     var application = switch (move.effect) {
@@ -399,12 +504,32 @@ class StandardBattleRules implements BattleRules {
         applySecondaryEffects
             ? _healTeam(userTeam, targetTeam, potency)
             : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
+      MoveEffect.healTeamAndRedistributeHealth =>
+        applySecondaryEffects
+            ? _healTeamAndRedistributeHealth(userTeam, targetTeam, potency)
+            : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
       MoveEffect.damageTeam => _damageTeam(
         userTeam,
         targetTeam,
         damagePotency,
         move.isCritical,
       ),
+      MoveEffect.damageActiveAndReserves => _damageActiveAndReserves(
+        userTeam,
+        targetTeam,
+        damagePotency,
+        reserveDamagePotency,
+        move.isCritical,
+      ),
+      MoveEffect.damageActiveAndRandomReserves =>
+        _damageActiveAndRandomReserves(
+          userTeam,
+          targetTeam,
+          damagePotency,
+          reserveDamagePotency,
+          followUpDamagePotency,
+          move.isCritical,
+        ),
       MoveEffect.damageReserve => _damageReserve(
         userTeam,
         targetTeam,
@@ -417,6 +542,21 @@ class StandardBattleRules implements BattleRules {
         damagePotency,
         move.isCritical,
       ),
+      MoveEffect.damageSwapOpponentAndDamage =>
+        applySecondaryEffects && !blocksTargetSecondaryEffects
+            ? _damageSwapOpponentAndDamage(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                followUpDamagePotency,
+                move.isCritical,
+              )
+            : _damageActive(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              ),
       MoveEffect.forceOpponentSwap =>
         applySecondaryEffects
             ? _forceOpponentSwap(userTeam, targetTeam)
@@ -435,6 +575,28 @@ class StandardBattleRules implements BattleRules {
                 damagePotency,
                 move.isCritical,
               ),
+      MoveEffect.damageTeamAndSwapSelf =>
+        applySecondaryEffects && performSwap
+            ? _swapSelfAfterTeamDamage(
+                userTeam,
+                targetTeam,
+                damagePotency,
+                move.isCritical,
+              )
+            : _damageTeam(userTeam, targetTeam, damagePotency, move.isCritical),
+      MoveEffect.mixedChoice =>
+        applySecondaryEffects
+            ? _applyMixedChoice(
+                userTeam,
+                targetTeam,
+                choice: mixedChoice!,
+                choiceType: move.mixedMoveChoice,
+                damagePotency: damagePotency,
+                followUpDamagePotency: followUpDamagePotency,
+                isCritical: move.isCritical,
+                performSwap: performSwap,
+              )
+            : _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam),
       MoveEffect.recklessDamage =>
         applySecondaryEffects
             ? _recklessDamage(
@@ -463,6 +625,28 @@ class StandardBattleRules implements BattleRules {
     }
 
     if (applySecondaryEffects) {
+      if (move.maxHealthGrowth > 0) {
+        final healthBeforeGrowth = application.userTeam.active.currentHealth;
+        final grownTeam = application.userTeam.growActiveMaxHealthOnce(
+          move.maxHealthGrowth,
+        );
+        final actualGrowthHealing =
+            grownTeam.active.currentHealth - healthBeforeGrowth;
+        application = application.copyWith(
+          userTeam: grownTeam,
+          healing: application.healing + actualGrowthHealing,
+          effectEvents: [
+            ...application.effectEvents,
+            if (actualGrowthHealing > 0)
+              _ApplicationEffectEvent(
+                targetsUser: true,
+                combatantIndex: application.userTeam.activeIndex,
+                type: BattleEffectType.healing,
+                amount: actualGrowthHealing,
+              ),
+          ],
+        );
+      }
       if (move.selfHealing > 0) {
         final healthBeforeHealing = application.userTeam.active.currentHealth;
         final healedTeam = application.userTeam.healActive(move.selfHealing);
@@ -510,24 +694,96 @@ class StandardBattleRules implements BattleRules {
     }
 
     if (applySecondaryEffects) {
-      application = _applyStatuses(
-        application,
-        move.statusApplications,
-        isCritical: move.isCritical,
-        attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
-      );
+      if (move.transfersHarmfulStatusesToOpponent) {
+        application = _transferHarmfulStatuses(
+          application,
+          blockTargetEffects: blocksTargetSecondaryEffects,
+        );
+      }
+      final canApplyMoveStatuses =
+          move.companionEffect != CompanionMoveEffect.sacrificeRandom ||
+          application.userTeam.active.companions.isNotEmpty;
+      if (canApplyMoveStatuses) {
+        application = _applyStatuses(
+          application,
+          move.statusApplications,
+          isCritical: move.isCritical,
+          attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+          blockOpponentEffects: blocksTargetSecondaryEffects,
+        );
+      }
+      if (move.randomHarmfulStatusCount > 0) {
+        final availableStatuses = [..._randomHarmfulStatuses];
+        final randomStatuses = <StatusApplication>[];
+        for (
+          var index = 0;
+          index < move.randomHarmfulStatusCount && availableStatuses.isNotEmpty;
+          index++
+        ) {
+          randomStatuses.add(
+            StatusApplication(
+              type: availableStatuses.removeAt(
+                _random.nextInt(availableStatuses.length),
+              ),
+              target: StatusTarget.opponent,
+            ),
+          );
+        }
+        application = _applyStatuses(
+          application,
+          randomStatuses,
+          isCritical: move.isCritical,
+          attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+          blockOpponentEffects: blocksTargetSecondaryEffects,
+        );
+      }
+      if (move.randomBeneficialStatusCount > 0) {
+        final availableStatuses = [..._randomBeneficialStatuses];
+        final randomStatuses = <StatusApplication>[];
+        for (
+          var index = 0;
+          index < move.randomBeneficialStatusCount &&
+              availableStatuses.isNotEmpty;
+          index++
+        ) {
+          randomStatuses.add(
+            StatusApplication(
+              type: availableStatuses.removeAt(
+                _random.nextInt(availableStatuses.length),
+              ),
+              target: StatusTarget.self,
+            ),
+          );
+        }
+        application = _applyStatuses(
+          application,
+          randomStatuses,
+          isCritical: move.isCritical,
+          attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+          blockOpponentEffects: false,
+        );
+      }
       application = _applyCompanionMoveEffect(
         application,
         move.companionEffect,
         originalBearerIndex: userTeam.activeIndex,
+        blockTargetEffects: blocksTargetSecondaryEffects,
       );
+      if (move.clearsOpponentCompanions && !blocksTargetSecondaryEffects) {
+        application = application.copyWith(
+          targetTeam: application.targetTeam.removeAllCompanionsFromActive(),
+        );
+      }
     }
 
     final bleedingStacks =
         userTeam.active.companionCount(Companion.didelphodon) *
         userTeam.active.companionEffectMultiplier.round();
     if (applySecondaryEffects &&
-        _dealsDamage(move.effect) &&
+        !blocksTargetSecondaryEffects &&
+        (_dealsDamage(move.effect) ||
+            application.activeDamage > 0 ||
+            application.reserveDamage > 0) &&
         bleedingStacks > 0) {
       application = application.copyWith(
         targetTeam: application.targetTeam.applyEnemyStatusToActive(
@@ -646,6 +902,17 @@ class StandardBattleRules implements BattleRules {
     );
   }
 
+  _MoveApplication _healTeamAndRedistributeHealth(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double potency,
+  ) {
+    final healingApplication = _healTeam(userTeam, targetTeam, potency);
+    return healingApplication.copyWith(
+      userTeam: healingApplication.userTeam.redistributeCurrentHealthEvenly(),
+    );
+  }
+
   _MoveApplication _damageTeam(
     BattleTeam userTeam,
     BattleTeam targetTeam,
@@ -676,6 +943,86 @@ class StandardBattleRules implements BattleRules {
     return _MoveApplication(
       userTeam: nextUserTeam,
       targetTeam: nextTargetTeam,
+      activeDamage: activeDamage,
+      reserveDamage: reserveDamage,
+      effectEvents: effectEvents,
+    );
+  }
+
+  _MoveApplication _damageActiveAndReserves(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double activePotency,
+    double reservePotency,
+    bool isCritical,
+  ) {
+    var nextUserTeam = userTeam;
+    var nextTargetTeam = targetTeam;
+    var activeDamage = 0.0;
+    var reserveDamage = 0.0;
+    final effectEvents = <_ApplicationEffectEvent>[];
+
+    for (var index = 0; index < targetTeam.combatants.length; index++) {
+      final application = _damageTarget(
+        nextUserTeam,
+        nextTargetTeam,
+        index,
+        index == targetTeam.activeIndex ? activePotency : reservePotency,
+        isCritical,
+      );
+      nextUserTeam = application.userTeam;
+      nextTargetTeam = application.targetTeam;
+      activeDamage += application.activeDamage;
+      reserveDamage += application.reserveDamage;
+      effectEvents.addAll(application.effectEvents);
+    }
+
+    return _MoveApplication(
+      userTeam: nextUserTeam,
+      targetTeam: nextTargetTeam,
+      activeDamage: activeDamage,
+      reserveDamage: reserveDamage,
+      effectEvents: effectEvents,
+    );
+  }
+
+  _MoveApplication _damageActiveAndRandomReserves(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double activePotency,
+    double firstReservePotency,
+    double secondReservePotency,
+    bool isCritical,
+  ) {
+    var application = _damageActive(
+      userTeam,
+      targetTeam,
+      activePotency,
+      isCritical,
+    );
+    final activeDamage = application.activeDamage;
+    final reserveIndexes = [...targetTeam.swapIndexes];
+    var reserveDamage = 0.0;
+    final effectEvents = [...application.effectEvents];
+
+    for (final potency in [firstReservePotency, secondReservePotency]) {
+      if (reserveIndexes.isEmpty || potency <= 0) break;
+      final targetIndex = reserveIndexes.removeAt(
+        _random.nextInt(reserveIndexes.length),
+      );
+      final reserveApplication = _damageTarget(
+        application.userTeam,
+        application.targetTeam,
+        targetIndex,
+        potency,
+        isCritical,
+      );
+      application = reserveApplication;
+      reserveDamage += reserveApplication.reserveDamage;
+      effectEvents.addAll(reserveApplication.effectEvents);
+    }
+
+    return application.copyWith(
       activeDamage: activeDamage,
       reserveDamage: reserveDamage,
       effectEvents: effectEvents,
@@ -722,6 +1069,42 @@ class StandardBattleRules implements BattleRules {
     );
   }
 
+  _MoveApplication _damageSwapOpponentAndDamage(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double initialPotency,
+    double followUpPotency,
+    bool isCritical,
+  ) {
+    final initialApplication = _damageActive(
+      userTeam,
+      targetTeam,
+      initialPotency,
+      isCritical,
+    );
+    final swapApplication = _forceOpponentSwap(
+      initialApplication.userTeam,
+      initialApplication.targetTeam,
+    );
+    final followUpApplication = _damageActive(
+      swapApplication.userTeam,
+      swapApplication.targetTeam,
+      followUpPotency,
+      isCritical,
+    );
+    return followUpApplication.copyWith(
+      activeDamage:
+          initialApplication.activeDamage + followUpApplication.activeDamage,
+      reserveDamage:
+          initialApplication.reserveDamage + followUpApplication.reserveDamage,
+      targetSwapped: swapApplication.targetSwapped,
+      effectEvents: [
+        ...initialApplication.effectEvents,
+        ...followUpApplication.effectEvents,
+      ],
+    );
+  }
+
   _MoveApplication _forceOpponentSwap(
     BattleTeam userTeam,
     BattleTeam targetTeam,
@@ -734,6 +1117,119 @@ class StandardBattleRules implements BattleRules {
     );
   }
 
+  _MoveApplication _forceOpponentRandomSwap(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+  ) {
+    final candidates = targetTeam.swapIndexes;
+    if (candidates.isEmpty) {
+      return _MoveApplication.noop(userTeam: userTeam, targetTeam: targetTeam);
+    }
+    return _MoveApplication(
+      userTeam: userTeam,
+      targetTeam: targetTeam.swapTo(
+        candidates[_random.nextInt(candidates.length)],
+      ),
+      targetSwapped: true,
+    );
+  }
+
+  _MoveApplication _applyMixedChoice(
+    BattleTeam userTeam,
+    BattleTeam targetTeam, {
+    required int choice,
+    required MixedMoveChoice choiceType,
+    required double damagePotency,
+    required double followUpDamagePotency,
+    required bool isCritical,
+    required bool performSwap,
+  }) {
+    if (choiceType == MixedMoveChoice.arborealVersatility) {
+      return _applyArborealVersatility(
+        userTeam,
+        targetTeam,
+        choice: choice,
+        damagePotency: damagePotency,
+        swapDamagePotency: followUpDamagePotency,
+        isCritical: isCritical,
+        performSwap: performSwap,
+      );
+    }
+
+    if (choice == 0) {
+      return _healTeam(userTeam, targetTeam, 10);
+    }
+    if (choice == 1) {
+      return performSwap
+          ? _swapSelfAfterDamage(
+              userTeam,
+              targetTeam,
+              damagePotency,
+              isCritical,
+            )
+          : _damageActive(userTeam, targetTeam, damagePotency, isCritical);
+    }
+
+    final swapApplication = _forceOpponentRandomSwap(userTeam, targetTeam);
+    return _applyStatuses(
+      swapApplication,
+      const [
+        StatusApplication(
+          type: StatusType.famine,
+          target: StatusTarget.opponent,
+        ),
+      ],
+      isCritical: isCritical,
+      attackerSpeciesCard: userTeam.active.equippedSpeciesCard,
+      blockOpponentEffects: false,
+    );
+  }
+
+  _MoveApplication _applyArborealVersatility(
+    BattleTeam userTeam,
+    BattleTeam targetTeam, {
+    required int choice,
+    required double damagePotency,
+    required double swapDamagePotency,
+    required bool isCritical,
+    required bool performSwap,
+  }) {
+    if (choice == 0) {
+      return _damageActive(userTeam, targetTeam, damagePotency, isCritical);
+    }
+    if (choice == 1) {
+      final healingApplication = _healSelf(userTeam, targetTeam, 20);
+      return healingApplication.copyWith(
+        userTeam: healingApplication.userTeam.clearHarmfulStatusesFromActive(),
+      );
+    }
+
+    final swapApplication = performSwap
+        ? _swapSelfAfterDamage(
+            userTeam,
+            targetTeam,
+            swapDamagePotency,
+            isCritical,
+          )
+        : _damageActive(userTeam, targetTeam, swapDamagePotency, isCritical);
+    if (!swapApplication.swapped) return swapApplication;
+    return swapApplication.copyWith(
+      userTeam: swapApplication.userTeam.applyStatusToActive(
+        const StatusApplication(
+          type: StatusType.alphaMomentum,
+          target: StatusTarget.self,
+        ),
+      ),
+    );
+  }
+
+  bool _mixedChoiceDamagesActive(MixedMoveChoice choiceType, int choice) {
+    return switch (choiceType) {
+      MixedMoveChoice.falseEvolution => choice == 1,
+      MixedMoveChoice.arborealVersatility => choice == 0 || choice == 2,
+    };
+  }
+
   _MoveApplication _swapSelfAfterDamage(
     BattleTeam userTeam,
     BattleTeam targetTeam,
@@ -741,6 +1237,24 @@ class StandardBattleRules implements BattleRules {
     bool isCritical,
   ) {
     final damageApplication = _damageActive(
+      userTeam,
+      targetTeam,
+      potency,
+      isCritical,
+    );
+    return damageApplication.copyWith(
+      userTeam: damageApplication.userTeam.swapToFirstReserve(),
+      swapped: damageApplication.userTeam.swapIndexes.isNotEmpty,
+    );
+  }
+
+  _MoveApplication _swapSelfAfterTeamDamage(
+    BattleTeam userTeam,
+    BattleTeam targetTeam,
+    double potency,
+    bool isCritical,
+  ) {
+    final damageApplication = _damageTeam(
       userTeam,
       targetTeam,
       potency,
@@ -849,15 +1363,55 @@ class StandardBattleRules implements BattleRules {
     );
   }
 
+  _MoveApplication _transferHarmfulStatuses(
+    _MoveApplication application, {
+    required bool blockTargetEffects,
+  }) {
+    final harmfulStatuses = application.userTeam.active.statuses
+        .where((status) => status.type.isHarmful)
+        .toList(growable: false);
+    final target = application.targetTeam.active;
+    if (harmfulStatuses.isEmpty ||
+        blockTargetEffects ||
+        target.hasStatus(StatusType.secondaryImmunity) ||
+        target.hasCompanion(Companion.simosuchus)) {
+      return application;
+    }
+
+    var targetTeam = application.targetTeam;
+    for (final status in harmfulStatuses) {
+      targetTeam = targetTeam.applyEnemyStatusToActive(
+        StatusApplication(
+          type: status.type,
+          target: StatusTarget.opponent,
+          stacks: status.stacks,
+          durationTurns: status.remainingTurns,
+          permanent: status.remainingTurns == null,
+          delayFirstTick: status.justApplied,
+        ),
+      );
+    }
+    return application.copyWith(
+      userTeam: application.userTeam.clearHarmfulStatusesFromActive(),
+      targetTeam: targetTeam,
+    );
+  }
+
   _MoveApplication _applyStatuses(
     _MoveApplication application,
     List<StatusApplication> statusApplications, {
     required bool isCritical,
     required SpeciesCard? attackerSpeciesCard,
+    required bool blockOpponentEffects,
   }) {
     var nextApplication = application;
 
     for (final statusApplication in statusApplications) {
+      if (blockOpponentEffects &&
+          (statusApplication.target == StatusTarget.opponent ||
+              statusApplication.target == StatusTarget.opponentTeam)) {
+        continue;
+      }
       final adjustedApplication = _adjustStatusApplication(
         statusApplication,
         isCritical: isCritical,
@@ -870,8 +1424,18 @@ class StandardBattleRules implements BattleRules {
             adjustedApplication,
           ),
         ),
+        StatusTarget.selfTeam => nextApplication.copyWith(
+          userTeam: nextApplication.userTeam.applyStatusToAll(
+            adjustedApplication,
+          ),
+        ),
         StatusTarget.opponent => nextApplication.copyWith(
           targetTeam: nextApplication.targetTeam.applyEnemyStatusToActive(
+            adjustedApplication,
+          ),
+        ),
+        StatusTarget.opponentTeam => nextApplication.copyWith(
+          targetTeam: nextApplication.targetTeam.applyEnemyStatusToAll(
             adjustedApplication,
           ),
         ),
@@ -894,7 +1458,8 @@ class StandardBattleRules implements BattleRules {
     if (attackerSpeciesCard == SpeciesCard.shadowHunter) {
       duration += 2;
     }
-    if (application.target == StatusTarget.opponent &&
+    if ((application.target == StatusTarget.opponent ||
+            application.target == StatusTarget.opponentTeam) &&
         targetTeam.active.equippedSpeciesCard == SpeciesCard.sourceOfLife) {
       duration = 1;
     }
@@ -911,14 +1476,25 @@ class StandardBattleRules implements BattleRules {
 
   double _speciesModifiedDamagePotency({
     required Combatant attacker,
+    required Combatant target,
     required ChampionMove move,
     required double potency,
     required bool targetSwappedThisTurn,
   }) {
-    if (!_dealsDamage(move.effect)) return potency;
+    if (!_dealsDamage(move.effect) && move.effect != MoveEffect.mixedChoice) {
+      return potency;
+    }
 
     final conditionalPotency = targetSwappedThisTurn
         ? move.bonusPotencyIfTargetSwapped
+        : 0;
+    final bleedingPotency = target.hasStatus(StatusType.bleeding)
+        ? move.bonusPotencyIfTargetBleeding
+        : 0;
+    final roundPotency =
+        attacker.roundsWithoutWinning * move.bonusPotencyPerRoundWithoutWinning;
+    final lowHealthPotency = attacker.currentHealth <= attacker.maxHealth / 2
+        ? move.bonusPotencyIfAtOrBelowHalfHealth
         : 0;
     final dragonflyPotency = attacker.companionValue(
       10.0 * attacker.companionCount(Companion.dragonfly),
@@ -938,6 +1514,9 @@ class StandardBattleRules implements BattleRules {
     }
     return (potency +
             conditionalPotency +
+            bleedingPotency +
+            roundPotency +
+            lowHealthPotency +
             dragonflyPotency +
             criticalCompanionPotency) *
         multiplier;
@@ -983,8 +1562,13 @@ class StandardBattleRules implements BattleRules {
     _MoveApplication application,
     CompanionMoveEffect effect, {
     required int originalBearerIndex,
+    required bool blockTargetEffects,
   }) {
-    return switch (effect) {
+    if (blockTargetEffects && effect == CompanionMoveEffect.stealRandom) {
+      return application;
+    }
+
+    final nextApplication = switch (effect) {
       CompanionMoveEffect.none => application,
       CompanionMoveEffect.summonRandom => _summonCompanion(
         application,
@@ -998,7 +1582,14 @@ class StandardBattleRules implements BattleRules {
         application,
         originalBearerIndex,
       ),
+      CompanionMoveEffect.sacrificeRandom => _sacrificeCompanion(
+        application,
+        originalBearerIndex,
+      ),
     };
+    return blockTargetEffects
+        ? nextApplication.copyWith(targetTeam: application.targetTeam)
+        : nextApplication;
   }
 
   _MoveApplication _summonCompanion(
@@ -1033,6 +1624,23 @@ class StandardBattleRules implements BattleRules {
       application.copyWith(targetTeam: targetTeam),
       bearerIndex,
       companion,
+    );
+  }
+
+  _MoveApplication _sacrificeCompanion(
+    _MoveApplication application,
+    int bearerIndex,
+  ) {
+    final companion = _companionRandomizer.chooseFrom(
+      application.userTeam.combatants[bearerIndex].companions,
+    );
+    if (companion == null) return application;
+
+    return application.copyWith(
+      userTeam: application.userTeam.removeCompanion(
+        bearerIndex: bearerIndex,
+        companion: companion,
+      ),
     );
   }
 
@@ -1121,15 +1729,43 @@ class StandardBattleRules implements BattleRules {
     MoveEffect.damage ||
     MoveEffect.drainHealth ||
     MoveEffect.damageTeam ||
+    MoveEffect.damageActiveAndReserves ||
+    MoveEffect.damageActiveAndRandomReserves ||
     MoveEffect.damageReserve ||
     MoveEffect.damageReserveAndPromote ||
+    MoveEffect.damageSwapOpponentAndDamage ||
     MoveEffect.swapSelf ||
+    MoveEffect.damageTeamAndSwapSelf ||
     MoveEffect.recklessDamage => true,
     MoveEffect.none ||
     MoveEffect.healSelf ||
     MoveEffect.healTeam ||
-    MoveEffect.forceOpponentSwap => false,
+    MoveEffect.healTeamAndRedistributeHealth ||
+    MoveEffect.forceOpponentSwap ||
+    MoveEffect.mixedChoice => false,
   };
+
+  bool _moveDamagesActive(MoveEffect effect, BattleTeam targetTeam) {
+    return switch (effect) {
+      MoveEffect.damage ||
+      MoveEffect.drainHealth ||
+      MoveEffect.damageTeam ||
+      MoveEffect.damageActiveAndReserves ||
+      MoveEffect.damageActiveAndRandomReserves ||
+      MoveEffect.damageSwapOpponentAndDamage ||
+      MoveEffect.swapSelf ||
+      MoveEffect.damageTeamAndSwapSelf ||
+      MoveEffect.recklessDamage => true,
+      MoveEffect.damageReserve || MoveEffect.damageReserveAndPromote =>
+        targetTeam.firstReserveIndex == null,
+      MoveEffect.none ||
+      MoveEffect.healSelf ||
+      MoveEffect.healTeam ||
+      MoveEffect.healTeamAndRedistributeHealth ||
+      MoveEffect.forceOpponentSwap ||
+      MoveEffect.mixedChoice => false,
+    };
+  }
 
   double _modifiedDamage({
     required Combatant attacker,
@@ -1142,6 +1778,8 @@ class StandardBattleRules implements BattleRules {
     if (attacker.hasStatus(StatusType.alphaMomentum)) multiplier *= 1.5;
     if (defender.hasStatus(StatusType.brokenBone)) multiplier *= 1.3;
     if (defender.hasStatus(StatusType.protectiveScales)) multiplier *= 0.7;
+    if (defender.hasStatus(StatusType.totalCover)) multiplier *= 0.5;
+    if (defender.hasStatus(StatusType.groundedRegeneration)) multiplier *= 0.5;
 
     return potency * multiplier;
   }

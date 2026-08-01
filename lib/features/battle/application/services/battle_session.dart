@@ -6,6 +6,7 @@ import '../../domain/entities/battle_turn.dart';
 import '../../domain/services/ai_move_strategy.dart';
 import '../../domain/services/battle_rules.dart';
 import '../../domain/services/companion_randomizer.dart';
+import '../../../champions/domain/entities/champion_move.dart';
 import '../../../companions/domain/entities/companion.dart';
 import '../../../species_cards/domain/entities/species_card.dart';
 
@@ -36,6 +37,7 @@ class BattleSession {
       phase: BattlePhase.choosingMove,
       clearLastResolution: true,
       clearPlayerGesture: true,
+      clearPlayerMoveOption: true,
       opponentGesture: _chooseOpponentMove(state),
     );
   }
@@ -63,7 +65,17 @@ class BattleSession {
 
   BattleState selectPlayerGesture(BattleState state, BattleGesture gesture) {
     if (state.phase != BattlePhase.choosingMove) return state;
-    return state.copyWith(playerGesture: gesture);
+    return state.copyWith(playerGesture: gesture, clearPlayerMoveOption: true);
+  }
+
+  BattleState selectPlayerMoveOption(BattleState state, int option) {
+    if (state.phase != BattlePhase.choosingMove ||
+        state.selectedPlayerMove?.effect != MoveEffect.mixedChoice ||
+        option < 0 ||
+        option > 2) {
+      return state;
+    }
+    return state.copyWith(playerMoveOption: option);
   }
 
   BattleState selectPlayerSpeciesCard(BattleState state, int index) {
@@ -121,6 +133,7 @@ class BattleSession {
     var nextState = state.copyWith(
       phase: gameOver ? BattlePhase.gameOver : BattlePhase.command,
       clearPlayerGesture: true,
+      clearPlayerMoveOption: true,
       clearOpponentGesture: true,
       clearLastResolution: true,
       clearPendingAction: true,
@@ -146,6 +159,7 @@ class BattleSession {
       opponentTeam: state.opponentTeam,
       playerGesture: state.playerGesture!,
       opponentGesture: state.opponentGesture!,
+      playerMoveOption: state.playerMoveOption,
     );
     final selectedCardIndex = state.pendingPlayerSpeciesCardIndex;
     if (resolution.outcome == BattleOutcome.playerVictory &&
