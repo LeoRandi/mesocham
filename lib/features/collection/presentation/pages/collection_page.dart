@@ -9,6 +9,8 @@ import '../../../battle/presentation/widgets/battle_backdrop.dart';
 import '../../../champions/domain/entities/champion.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
+import '../../../decks/domain/entities/player_deck.dart';
+import '../../../decks/presentation/widgets/deck_list_dialog.dart';
 import '../../../home/data/player_preferences.dart';
 import 'champion_info_page.dart';
 
@@ -29,6 +31,7 @@ class CollectionPage extends StatefulWidget {
 class _CollectionPageState extends State<CollectionPage> {
   Map<String, int> _championCounts = const {};
   Set<String> _discoveredChampionIds = const {};
+  List<PlayerDeck> _savedDecks = const [];
   var _loading = true;
 
   @override
@@ -39,14 +42,19 @@ class _CollectionPageState extends State<CollectionPage> {
 
   Future<void> _loadCollection() async {
     try {
-      final counts = await widget.playerPreferences
+      final countsFuture = widget.playerPreferences
           .getChampionCollectionCounts();
-      final discoveredIds = await widget.playerPreferences
+      final discoveredIdsFuture = widget.playerPreferences
           .getDiscoveredChampionIds();
+      final decksFuture = widget.playerPreferences.getDecks();
+      final counts = await countsFuture;
+      final discoveredIds = await discoveredIdsFuture;
+      final decks = await decksFuture;
       if (!mounted) return;
       setState(() {
         _championCounts = counts;
         _discoveredChampionIds = discoveredIds;
+        _savedDecks = decks;
         _loading = false;
       });
     } on Object {
@@ -57,6 +65,39 @@ class _CollectionPageState extends State<CollectionPage> {
 
   void _goBack() {
     Navigator.of(context).pop();
+  }
+
+  Future<void> _openDeckCreation([PlayerDeck? deckToEdit]) async {
+    final savedDeck = await Navigator.of(
+      context,
+    ).pushNamed('/deck-creation', arguments: deckToEdit);
+    if (savedDeck is PlayerDeck) {
+      await _refreshSavedDecks();
+    }
+  }
+
+  Future<void> _openDeckList() async {
+    if (_savedDecks.isEmpty) return;
+    final deckToEdit = await showDialog<PlayerDeck>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.78),
+      builder: (context) => DeckListDialog(
+        decks: _savedDecks,
+        catalog: widget.catalog,
+        purpose: DeckListPurpose.edit,
+      ),
+    );
+    if (!mounted || deckToEdit == null) return;
+    await _openDeckCreation(deckToEdit);
+  }
+
+  Future<void> _refreshSavedDecks() async {
+    try {
+      final decks = await widget.playerPreferences.getDecks();
+      if (mounted) setState(() => _savedDecks = decks);
+    } on Object {
+      // Keep the last known list available if refreshing fails.
+    }
   }
 
   void _openChampionInfo(
@@ -169,7 +210,7 @@ class _CollectionPageState extends State<CollectionPage> {
                               compact ? 18 : 34,
                               compact ? 8 : 16,
                               compact ? 18 : 34,
-                              compact ? 20 : 32,
+                              compact ? 86 : 108,
                             ),
                             gridDelegate:
                                 SliverGridDelegateWithMaxCrossAxisExtent(
@@ -209,10 +250,93 @@ class _CollectionPageState extends State<CollectionPage> {
                   },
                 ),
               ),
+              Positioned(
+                left: MediaQuery.sizeOf(context).width < 900 ? 18 : 34,
+                bottom:
+                    MediaQuery.paddingOf(context).bottom +
+                    (MediaQuery.sizeOf(context).height < 560 ? 16 : 28),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CreateDeckButton(onPressed: () => _openDeckCreation()),
+                    const SizedBox(width: 12),
+                    _ViewDecksButton(
+                      onPressed: !_loading && _savedDecks.isNotEmpty
+                          ? _openDeckList
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CreateDeckButton extends StatelessWidget {
+  const _CreateDeckButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      key: const ValueKey('collection-create-deck'),
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        foregroundColor: AppColors.ink,
+        backgroundColor: AppColors.amber,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        elevation: 10,
+        shadowColor: Colors.black,
+        side: const BorderSide(color: AppColors.bone, width: 1.4),
+        textStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.9,
+        ),
+      ),
+      icon: const Icon(Icons.add_card_rounded),
+      label: const Text('CREAR MAZO'),
+    );
+  }
+}
+
+class _ViewDecksButton extends StatelessWidget {
+  const _ViewDecksButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      key: const ValueKey('collection-view-decks'),
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        foregroundColor: AppColors.ink,
+        backgroundColor: AppColors.health,
+        disabledForegroundColor: AppColors.sand.withValues(alpha: 0.48),
+        disabledBackgroundColor: AppColors.earth.withValues(alpha: 0.72),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        elevation: onPressed == null ? 0 : 10,
+        shadowColor: Colors.black,
+        side: BorderSide(
+          color: onPressed == null
+              ? AppColors.sand.withValues(alpha: 0.22)
+              : AppColors.bone,
+          width: 1.4,
+        ),
+        textStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.9,
+        ),
+      ),
+      icon: const Icon(Icons.style_rounded),
+      label: const Text('MIS MAZOS'),
     );
   }
 }

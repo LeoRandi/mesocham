@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../decks/domain/entities/player_deck.dart';
+
 class PlayerPreferences {
   PlayerPreferences({SharedPreferencesAsync? preferences})
     : _preferences = preferences ?? SharedPreferencesAsync();
@@ -10,6 +12,7 @@ class PlayerPreferences {
   static const _unlockedChampionIdsKey = 'unlocked_champion_ids';
   static const _championCollectionCountsKey = 'champion_collection_counts';
   static const _discoveredChampionIdsKey = 'discovered_champion_ids';
+  static const _playerDecksKey = 'player_decks_v1';
 
   final SharedPreferencesAsync _preferences;
 
@@ -145,5 +148,44 @@ class PlayerPreferences {
       ...counts,
       normalizedId: (counts[normalizedId] ?? 0) + 1,
     });
+  }
+
+  Future<List<PlayerDeck>> getDecks() async {
+    final encodedDecks = await _preferences.getString(_playerDecksKey);
+    if (encodedDecks == null) return const [];
+
+    try {
+      final decoded = jsonDecode(encodedDecks);
+      if (decoded is! List) return const [];
+
+      final decks = <PlayerDeck>[];
+      final deckIds = <String>{};
+      for (final encodedDeck in decoded) {
+        final deck = PlayerDeck.tryFromJson(encodedDeck);
+        if (deck != null && deckIds.add(deck.id)) {
+          decks.add(deck);
+        }
+      }
+      return List.unmodifiable(decks);
+    } on FormatException {
+      return const [];
+    }
+  }
+
+  Future<void> saveDeck(PlayerDeck deck) async {
+    final decks = (await getDecks()).toList();
+    final existingIndex = decks.indexWhere(
+      (existingDeck) => existingDeck.id == deck.id,
+    );
+    if (existingIndex == -1) {
+      decks.add(deck);
+    } else {
+      decks[existingIndex] = deck;
+    }
+
+    await _preferences.setString(
+      _playerDecksKey,
+      jsonEncode([for (final savedDeck in decks) savedDeck.toJson()]),
+    );
   }
 }

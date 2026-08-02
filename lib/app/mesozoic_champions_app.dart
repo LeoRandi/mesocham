@@ -5,6 +5,8 @@ import '../features/battle/presentation/pages/battle_room_page.dart';
 import '../features/champions/data/local/local_champion_catalog.dart';
 import '../features/champions/domain/repositories/champion_catalog.dart';
 import '../features/collection/presentation/pages/collection_page.dart';
+import '../features/decks/domain/entities/player_deck.dart';
+import '../features/decks/presentation/pages/deck_creation_page.dart';
 import '../features/home/data/player_preferences.dart';
 import '../features/home/presentation/pages/home_page.dart';
 import '../features/loading/presentation/pages/game_loading_page.dart';
@@ -34,14 +36,19 @@ class MesozoicChampionsApp extends StatelessWidget {
     );
   }
 
-  Route<void> _onGenerateRoute(
+  Route<dynamic> _onGenerateRoute(
     RouteSettings settings, {
     required ChampionCatalog catalog,
     required PlayerPreferences playerPreferences,
   }) {
-    final loadingDestination = settings.arguments is String
-        ? settings.arguments! as String
-        : '/menu';
+    final loadingRequest = settings.arguments is GameLoadingRequest
+        ? settings.arguments! as GameLoadingRequest
+        : null;
+    final loadingDestination =
+        loadingRequest?.destinationRoute ??
+        (settings.arguments is String
+            ? settings.arguments! as String
+            : '/menu');
     final page = switch (settings.name) {
       '/menu' => GameMenuPage(
         catalog: catalog,
@@ -50,6 +57,7 @@ class MesozoicChampionsApp extends StatelessWidget {
       '/loading' => GameLoadingPage(
         catalog: catalog,
         destinationRoute: loadingDestination,
+        destinationArguments: loadingRequest?.destinationArguments,
         retainedRouteName:
             loadingDestination == '/battle' ||
                 loadingDestination == '/collection'
@@ -59,10 +67,20 @@ class MesozoicChampionsApp extends StatelessWidget {
       '/battle' => BattleRoomPage(
         catalog: catalog,
         playerPreferences: playerPreferences,
+        playerDeck: settings.arguments is PlayerDeck
+            ? settings.arguments! as PlayerDeck
+            : null,
       ),
       '/collection' => CollectionPage(
         catalog: catalog,
         playerPreferences: playerPreferences,
+      ),
+      '/deck-creation' => DeckCreationPage(
+        catalog: catalog,
+        playerPreferences: playerPreferences,
+        deckToEdit: settings.arguments is PlayerDeck
+            ? settings.arguments! as PlayerDeck
+            : null,
       ),
       _ => HomePage(catalog: catalog, playerPreferences: playerPreferences),
     };
@@ -70,9 +88,10 @@ class MesozoicChampionsApp extends StatelessWidget {
         settings.name == '/menu' ||
         settings.name == '/loading' ||
         settings.name == '/battle' ||
-        settings.name == '/collection';
+        settings.name == '/collection' ||
+        settings.name == '/deck-creation';
 
-    return PageRouteBuilder<void>(
+    return PageRouteBuilder<dynamic>(
       settings: settings,
       transitionDuration: Duration(
         milliseconds: usesHorizontalTransition ? 360 : 520,

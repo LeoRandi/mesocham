@@ -5,7 +5,10 @@ import 'package:flutter/services.dart';
 import '../../../../core/input/number_focus_shortcuts.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
+import '../../../decks/domain/entities/player_deck.dart';
+import '../../../decks/presentation/widgets/deck_list_dialog.dart';
 import '../../../home/data/player_preferences.dart';
+import '../../../loading/presentation/pages/game_loading_page.dart';
 import '../widgets/menu_backdrop.dart';
 
 const _menuDestinations = [
@@ -154,8 +157,49 @@ class _GameMenuPageState extends State<GameMenuPage> {
     if (_launchingFossilRace) return;
     _launchingFossilRace = true;
 
-    await Navigator.of(context).pushNamed('/loading', arguments: '/battle');
-    _launchingFossilRace = false;
+    try {
+      final decks = await widget.playerPreferences.getDecks();
+      if (!mounted) return;
+
+      final PlayerDeck? selectedDeck;
+      if (decks.isEmpty) {
+        final createdDeck = await Navigator.of(
+          context,
+        ).pushNamed('/deck-creation');
+        selectedDeck = createdDeck is PlayerDeck ? createdDeck : null;
+      } else {
+        selectedDeck = await showDialog<PlayerDeck>(
+          context: context,
+          barrierColor: Colors.black.withValues(alpha: 0.78),
+          builder: (context) => DeckListDialog(
+            decks: decks,
+            catalog: widget.catalog,
+            purpose: DeckListPurpose.battle,
+          ),
+        );
+      }
+      if (!mounted || selectedDeck == null) return;
+
+      await Navigator.of(context).pushNamed(
+        '/loading',
+        arguments: GameLoadingRequest(
+          destinationRoute: '/battle',
+          destinationArguments: selectedDeck,
+        ),
+      );
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Could not load your saved decks.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+    } finally {
+      _launchingFossilRace = false;
+    }
   }
 
   Future<void> _openCollection() async {

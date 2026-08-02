@@ -7,11 +7,22 @@ import '../../../champions/presentation/widgets/champion_type_emblem.dart';
 import '../../../species_cards/domain/entities/species_card.dart';
 import '../../../species_cards/presentation/species_card_assets.dart';
 
+class GameLoadingRequest {
+  const GameLoadingRequest({
+    required this.destinationRoute,
+    this.destinationArguments,
+  });
+
+  final String destinationRoute;
+  final Object? destinationArguments;
+}
+
 class GameLoadingPage extends StatefulWidget {
   const GameLoadingPage({
     super.key,
     required this.catalog,
     required this.destinationRoute,
+    this.destinationArguments,
     this.retainedRouteName,
     this.minimumWaitDuration = const Duration(milliseconds: 500),
   });
@@ -20,6 +31,7 @@ class GameLoadingPage extends StatefulWidget {
   // continues after the destination's image assets have decoded successfully.
   final ChampionCatalog catalog;
   final String destinationRoute;
+  final Object? destinationArguments;
   final String? retainedRouteName;
   final Duration minimumWaitDuration;
 
@@ -110,6 +122,7 @@ class _GameLoadingPageState extends State<GameLoadingPage>
         (route) =>
             widget.retainedRouteName != null &&
             route.settings.name == widget.retainedRouteName,
+        arguments: widget.destinationArguments,
       );
     } on Object catch (error) {
       await minimumWait;

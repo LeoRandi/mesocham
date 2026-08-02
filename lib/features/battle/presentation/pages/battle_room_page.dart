@@ -9,6 +9,7 @@ import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
 import '../../../companions/domain/entities/companion.dart';
 import '../../../companions/presentation/widgets/companion_orb.dart';
+import '../../../decks/domain/entities/player_deck.dart';
 import '../../../home/data/player_preferences.dart';
 import '../../../species_cards/presentation/widgets/species_card_widgets.dart';
 import '../../application/services/battle_session.dart';
@@ -31,10 +32,12 @@ class BattleRoomPage extends StatefulWidget {
     super.key,
     required this.catalog,
     required this.playerPreferences,
+    this.playerDeck,
   });
 
   final ChampionCatalog catalog;
   final PlayerPreferences playerPreferences;
+  final PlayerDeck? playerDeck;
 
   @override
   State<BattleRoomPage> createState() => _BattleRoomPageState();
@@ -81,7 +84,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
           await widget.playerPreferences.getPlayerName() ?? 'Jugador';
       final teams = FossilRaceTeamFactory(
         catalog: widget.catalog,
-      ).create(collection);
+      ).create(collection, playerChampionIds: widget.playerDeck?.championIds);
       if (!mounted) return;
 
       setState(() {

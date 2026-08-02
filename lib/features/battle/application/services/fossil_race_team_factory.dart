@@ -21,7 +21,10 @@ class FossilRaceTeamFactory {
   final ChampionCatalog _catalog;
   final math.Random _random;
 
-  FossilRaceTeams create(Map<String, int> ownedChampionCounts) {
+  FossilRaceTeams create(
+    Map<String, int> ownedChampionCounts, {
+    List<String>? playerChampionIds,
+  }) {
     final ownedChampions = <Champion, int>{
       for (final entry in ownedChampionCounts.entries)
         if (entry.value > 0)
@@ -37,6 +40,51 @@ class FossilRaceTeamFactory {
       throw StateError('The champion catalog cannot be empty.');
     }
 
+    final playerChampions = playerChampionIds == null
+        ? _createRandomPlayerTeam(ownedChampions)
+        : _createSavedPlayerTeam(playerChampionIds, ownedChampionCounts);
+
+    // CPU slots are independent uniform selections from the entire catalog.
+    final opponentChampions = List.generate(
+      teamSize,
+      (_) => _catalog.champions[_random.nextInt(_catalog.champions.length)],
+      growable: false,
+    );
+
+    return FossilRaceTeams(
+      playerTeam: BattleTeam.fresh(playerChampions),
+      opponentTeam: BattleTeam.fresh(opponentChampions),
+    );
+  }
+
+  List<Champion> _createSavedPlayerTeam(
+    List<String> championIds,
+    Map<String, int> ownedChampionCounts,
+  ) {
+    if (championIds.length != teamSize) {
+      throw StateError('A saved Fossil Race deck requires 3 champions.');
+    }
+
+    final usedCopies = <String, int>{};
+    final champions = <Champion>[];
+    for (final championId in championIds) {
+      final champion = _catalog.championById(championId);
+      if (champion == null) {
+        throw StateError('Saved deck champion "$championId" does not exist.');
+      }
+      final nextUsedCount = (usedCopies[championId] ?? 0) + 1;
+      if (nextUsedCount > (ownedChampionCounts[championId] ?? 0)) {
+        throw StateError(
+          'The saved deck uses unavailable copies of ${champion.name}.',
+        );
+      }
+      usedCopies[championId] = nextUsedCount;
+      champions.add(champion);
+    }
+    return champions;
+  }
+
+  List<Champion> _createRandomPlayerTeam(Map<Champion, int> ownedChampions) {
     final remainingCopies = Map<Champion, int>.of(ownedChampions);
     final playerChampions = <Champion>[];
     while (playerChampions.length < teamSize && remainingCopies.isNotEmpty) {
@@ -73,17 +121,6 @@ class FossilRaceTeamFactory {
         unlockedChampions[_random.nextInt(unlockedChampions.length)],
       );
     }
-
-    // CPU slots are independent uniform selections from the entire catalog.
-    final opponentChampions = List.generate(
-      teamSize,
-      (_) => _catalog.champions[_random.nextInt(_catalog.champions.length)],
-      growable: false,
-    );
-
-    return FossilRaceTeams(
-      playerTeam: BattleTeam.fresh(playerChampions),
-      opponentTeam: BattleTeam.fresh(opponentChampions),
-    );
+    return playerChampions;
   }
 }
