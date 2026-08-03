@@ -1,8 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/entities/champion.dart';
+import '../../../champions/domain/entities/champion_move.dart';
 import '../../../champions/presentation/widgets/battle_gesture_icon.dart';
+import '../../../champions/presentation/widgets/champion_move_details.dart';
 import '../../domain/entities/battle_gesture.dart';
 
 class GestureWheel extends StatelessWidget {
@@ -13,6 +17,8 @@ class GestureWheel extends StatelessWidget {
     required this.enabled,
     required this.compact,
     required this.label,
+    required this.isOpponent,
+    required this.showDetails,
     this.onSelected,
     this.focusNodes,
   }) : assert(focusNodes == null || focusNodes.length == 3);
@@ -23,51 +29,126 @@ class GestureWheel extends StatelessWidget {
   final bool enabled;
   final bool compact;
   final String label;
+  final bool isOpponent;
+  final bool showDetails;
   final List<FocusNode>? focusNodes;
 
   @override
   Widget build(BuildContext context) {
+    final side = compact ? 188.0 : 244.0;
+    final buttonSize = (compact ? 59.0 : 76.0) * 4 / 3;
+    final accent = isOpponent ? AppColors.danger : AppColors.paper;
+
     return Semantics(
       label: label,
-      child: Container(
-        width: compact ? 295 : 420,
-        padding: EdgeInsets.fromLTRB(
-          compact ? 8 : 13,
-          compact ? 5 : 8,
-          compact ? 8 : 13,
-          compact ? 7 : 11,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.ink.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: AppColors.sand.withValues(alpha: 0.48),
-            width: 1.5,
-          ),
-          boxShadow: const [
-            BoxShadow(color: Colors.black54, blurRadius: 18, spreadRadius: 1),
+      child: SizedBox.square(
+        dimension: side,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Center(
+              child: _OrbitRing(
+                key: ValueKey(
+                  '${isOpponent ? 'opponent' : 'player'}-fight-ring-outer',
+                ),
+                diameter: side * 0.92,
+                color: accent,
+                strokeWidth: compact ? 2.5 : 3.5,
+              ),
+            ),
+            Center(
+              child: _OrbitRing(
+                key: ValueKey(
+                  '${isOpponent ? 'opponent' : 'player'}-fight-ring-inner',
+                ),
+                diameter: side * 0.61,
+                color: accent,
+                strokeWidth: compact ? 2 : 3,
+              ),
+            ),
+            for (var index = 0; index < BattleGesture.values.length; index++)
+              _positionedChoice(
+                gesture: BattleGesture.values[index],
+                index: index,
+                side: side,
+                buttonSize: buttonSize,
+              ),
           ],
         ),
-        child: Row(
-          children: [
-            for (var index = 0; index < BattleGesture.values.length; index++)
-              Expanded(
-                child: _GestureChoice(
-                  gesture: BattleGesture.values[index],
-                  moveName: champion.moveFor(BattleGesture.values[index]).name,
-                  critical: champion
-                      .moveFor(BattleGesture.values[index])
-                      .isCritical,
-                  selected: selected == BattleGesture.values[index],
-                  enabled: enabled,
-                  compact: compact,
-                  focusNode: focusNodes?[index],
-                  shortcutNumber: focusNodes == null ? null : index + 1,
-                  onTap: onSelected == null
-                      ? null
-                      : () => onSelected!(BattleGesture.values[index]),
-                ),
-              ),
+      ),
+    );
+  }
+
+  Widget _positionedChoice({
+    required BattleGesture gesture,
+    required int index,
+    required double side,
+    required double buttonSize,
+  }) {
+    final center = _gestureCenter(gesture);
+    return Positioned(
+      left: side * center.dx - buttonSize / 2,
+      top: side * center.dy - buttonSize / 2,
+      width: buttonSize,
+      height: buttonSize,
+      child: _GestureChoice(
+        gesture: gesture,
+        move: champion.moveFor(gesture),
+        selected: selected == gesture,
+        enabled: enabled,
+        compact: compact,
+        isOpponent: isOpponent,
+        showDetails: showDetails,
+        focusNode: focusNodes?[index],
+        shortcutNumber: focusNodes == null ? null : index + 1,
+        onTap: onSelected == null ? null : () => onSelected!(gesture),
+      ),
+    );
+  }
+
+  Offset _gestureCenter(BattleGesture gesture) {
+    if (isOpponent) {
+      return switch (gesture) {
+        BattleGesture.rock => const Offset(0.5, 0.79),
+        BattleGesture.paper => const Offset(0.79, 0.23),
+        BattleGesture.scissors => const Offset(0.21, 0.23),
+      };
+    }
+    return switch (gesture) {
+      BattleGesture.rock => const Offset(0.5, 0.21),
+      BattleGesture.paper => const Offset(0.79, 0.77),
+      BattleGesture.scissors => const Offset(0.21, 0.77),
+    };
+  }
+}
+
+class _OrbitRing extends StatelessWidget {
+  const _OrbitRing({
+    super.key,
+    required this.diameter,
+    required this.color,
+    required this.strokeWidth,
+  });
+
+  final double diameter;
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: diameter,
+        height: diameter,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: strokeWidth),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.22),
+              blurRadius: 8,
+              spreadRadius: 1,
+            ),
           ],
         ),
       ),
@@ -78,22 +159,24 @@ class GestureWheel extends StatelessWidget {
 class _GestureChoice extends StatefulWidget {
   const _GestureChoice({
     required this.gesture,
-    required this.moveName,
-    required this.critical,
+    required this.move,
     required this.selected,
     required this.enabled,
     required this.compact,
+    required this.isOpponent,
+    required this.showDetails,
     required this.focusNode,
     required this.shortcutNumber,
     required this.onTap,
   });
 
   final BattleGesture gesture;
-  final String moveName;
-  final bool critical;
+  final ChampionMove move;
   final bool selected;
   final bool enabled;
   final bool compact;
+  final bool isOpponent;
+  final bool showDetails;
   final FocusNode? focusNode;
   final int? shortcutNumber;
   final VoidCallback? onTap;
@@ -105,17 +188,29 @@ class _GestureChoice extends StatefulWidget {
 class _GestureChoiceState extends State<_GestureChoice> {
   bool _focused = false;
   bool _hovered = false;
+  OverlayEntry? _detailsEntry;
+  Offset _pointerPosition = Offset.zero;
+
+  @override
+  void didUpdateWidget(covariant _GestureChoice oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.showDetails || oldWidget.move != widget.move) {
+      _removeDetails();
+    }
+  }
+
+  @override
+  void dispose() {
+    _removeDetails();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final color = _colorFor(widget.gesture);
-    final iconSize = widget.compact ? 28.0 : 40.0;
     final shortcutPrefix = widget.shortcutNumber == null
         ? ''
         : '${widget.shortcutNumber}, ';
-    final displayLabel = widget.shortcutNumber == null
-        ? _labelFor(widget.gesture).toUpperCase()
-        : '${widget.shortcutNumber}  ${_labelFor(widget.gesture).toUpperCase()}';
     final highlighted = _focused || _hovered;
     final selectable = widget.enabled && widget.onTap != null;
 
@@ -123,99 +218,76 @@ class _GestureChoiceState extends State<_GestureChoice> {
       button: selectable,
       selected: widget.selected,
       label:
-          '$shortcutPrefix${_labelFor(widget.gesture)}, ${widget.moveName}${widget.critical ? ', critical' : ''}',
+          '$shortcutPrefix${_labelFor(widget.gesture)}, ${widget.move.name}'
+          '${widget.move.isCritical ? ', critical' : ''}',
       child: MouseRegion(
         cursor: selectable
             ? SystemMouseCursors.click
             : SystemMouseCursors.basic,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
+        onEnter: (event) {
+          setState(() => _hovered = true);
+          _showDetails(event.position);
+        },
+        onHover: (event) => _updateDetailsPosition(event.position),
+        onExit: (_) {
+          setState(() => _hovered = false);
+          _removeDetails();
+        },
         child: Material(
           color: Colors.transparent,
+          shape: const CircleBorder(),
           child: InkWell(
-            key: widget.shortcutNumber == null
-                ? null
-                : ValueKey('battle-move-${widget.gesture.name}'),
+            key: ValueKey(
+              '${widget.isOpponent ? 'opponent-move' : 'battle-move'}-'
+              '${widget.gesture.name}',
+            ),
             focusNode: widget.focusNode,
             canRequestFocus: selectable,
+            customBorder: const CircleBorder(),
             onFocusChange: (focused) => setState(() => _focused = focused),
-            onTap: selectable ? widget.onTap : null,
-            borderRadius: BorderRadius.circular(999),
+            onTap: selectable
+                ? () {
+                    widget.focusNode?.requestFocus();
+                    widget.onTap!();
+                  }
+                : null,
             child: AnimatedScale(
-              scale: widget.selected ? 1.11 : (highlighted ? 1.02 : 0.92),
+              scale: widget.selected ? 1.13 : (highlighted ? 1.06 : 0.96),
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutBack,
               child: AnimatedContainer(
+                key: widget.selected
+                    ? ValueKey('selected-battle-move-${widget.gesture.name}')
+                    : null,
                 duration: const Duration(milliseconds: 220),
-                margin: EdgeInsets.symmetric(
-                  horizontal: widget.compact ? 3 : 5,
-                ),
-                padding: EdgeInsets.symmetric(vertical: widget.compact ? 4 : 7),
                 decoration: BoxDecoration(
+                  shape: BoxShape.circle,
                   color: widget.selected
-                      ? color.withValues(alpha: 0.98)
-                      : color.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
+                      ? color.withValues(alpha: 0.42)
+                      : Colors.transparent,
                   border: Border.all(
                     color: widget.selected || highlighted
                         ? Colors.white
-                        : color.withValues(alpha: 0.72),
-                    width: widget.selected || highlighted ? 2.2 : 1.2,
+                        : Colors.transparent,
+                    width: widget.selected ? 3 : 2,
                   ),
                   boxShadow: widget.selected || highlighted
                       ? [
                           BoxShadow(
-                            color: color.withValues(alpha: 0.7),
-                            blurRadius: 18,
-                            spreadRadius: 2,
+                            color: color.withValues(
+                              alpha: widget.selected ? 0.9 : 0.58,
+                            ),
+                            blurRadius: widget.selected ? 22 : 14,
+                            spreadRadius: widget.selected ? 4 : 2,
                           ),
                         ]
                       : const [],
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    BattleGestureIcon(
-                      gesture: widget.gesture,
-                      critical: widget.critical,
-                      size: iconSize,
-                    ),
-                    SizedBox(width: widget.compact ? 4 : 7),
-                    Flexible(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayLabel,
-                            maxLines: 1,
-                            style: TextStyle(
-                              color: widget.selected
-                                  ? AppColors.ink
-                                  : AppColors.bone,
-                              fontSize: widget.compact ? 8 : 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.7,
-                            ),
-                          ),
-                          Text(
-                            widget.moveName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: widget.selected
-                                  ? AppColors.ink.withValues(alpha: 0.78)
-                                  : AppColors.sand.withValues(alpha: 0.7),
-                              fontSize: widget.compact ? 6 : 8,
-                              fontWeight: widget.critical
-                                  ? FontWeight.w900
-                                  : FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                padding: EdgeInsets.all(widget.compact ? 2 : 3),
+                child: BattleGestureIcon(
+                  gesture: widget.gesture,
+                  critical: widget.move.isCritical,
+                  size: (widget.compact ? 54 : 70) * 4 / 3,
                 ),
               ),
             ),
@@ -223,6 +295,75 @@ class _GestureChoiceState extends State<_GestureChoice> {
         ),
       ),
     );
+  }
+
+  void _showDetails(Offset globalPosition) {
+    if (!widget.showDetails) return;
+    _pointerPosition = globalPosition;
+    _detailsEntry ??= OverlayEntry(builder: _buildDetailsOverlay);
+    if (!_detailsEntry!.mounted) {
+      Overlay.of(context, rootOverlay: true).insert(_detailsEntry!);
+    }
+    _detailsEntry!.markNeedsBuild();
+  }
+
+  void _updateDetailsPosition(Offset globalPosition) {
+    if (_detailsEntry == null) {
+      _showDetails(globalPosition);
+      return;
+    }
+    _pointerPosition = globalPosition;
+    _detailsEntry!.markNeedsBuild();
+  }
+
+  Widget _buildDetailsOverlay(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final popupWidth = math.min(
+      widget.compact ? 320.0 : 390.0,
+      screenSize.width - 16,
+    );
+    const pointerGap = 10.0;
+    final showAbovePointer = !widget.isOpponent;
+    final availableHeight = showAbovePointer
+        ? _pointerPosition.dy - pointerGap - 8
+        : screenSize.height - _pointerPosition.dy - pointerGap - 8;
+    final maximumHeight = math.min(220.0, math.max(76.0, availableHeight));
+    var left = _pointerPosition.dx - popupWidth / 2;
+    left = left.clamp(8.0, math.max(8.0, screenSize.width - popupWidth - 8));
+
+    return Positioned(
+      left: left,
+      top: showAbovePointer ? null : _pointerPosition.dy + pointerGap,
+      bottom: showAbovePointer
+          ? screenSize.height - _pointerPosition.dy + pointerGap
+          : null,
+      width: popupWidth,
+      child: IgnorePointer(
+        child: Material(
+          key: ValueKey(
+            '${widget.isOpponent ? 'opponent' : 'player'}-move-details-'
+            '${widget.gesture.name}',
+          ),
+          elevation: 18,
+          shadowColor: Colors.black,
+          color: AppColors.bone,
+          borderRadius: BorderRadius.circular(widget.compact ? 9 : 12),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maximumHeight),
+            child: SingleChildScrollView(
+              child: ChampionMoveDetails(move: widget.move, compact: true),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeDetails() {
+    _detailsEntry?.remove();
+    _detailsEntry?.dispose();
+    _detailsEntry = null;
   }
 
   Color _colorFor(BattleGesture gesture) => switch (gesture) {

@@ -42,6 +42,17 @@ class BattleSession {
     );
   }
 
+  BattleState cancelFight(BattleState state) {
+    if (state.phase != BattlePhase.choosingMove) return state;
+
+    return state.copyWith(
+      phase: BattlePhase.command,
+      clearPlayerGesture: true,
+      clearPlayerMoveOption: true,
+      clearOpponentGesture: true,
+    );
+  }
+
   BattleState startSwap(BattleState state) {
     if (!state.canSwap) return state;
 
@@ -61,6 +72,16 @@ class BattleSession {
       phase: BattlePhase.command,
       clearOpponentGesture: true,
     );
+  }
+
+  BattleState startSpeciesCardSelection(BattleState state) {
+    if (!state.canOpenSpeciesCards) return state;
+    return state.copyWith(phase: BattlePhase.choosingSpeciesCard);
+  }
+
+  BattleState cancelSpeciesCardSelection(BattleState state) {
+    if (state.phase != BattlePhase.choosingSpeciesCard) return state;
+    return state.copyWith(phase: BattlePhase.command);
   }
 
   BattleState selectPlayerGesture(BattleState state, BattleGesture gesture) {
@@ -162,8 +183,8 @@ class BattleSession {
       playerMoveOption: state.playerMoveOption,
     );
     final selectedCardIndex = state.pendingPlayerSpeciesCardIndex;
-    if (resolution.outcome == BattleOutcome.playerVictory &&
-        selectedCardIndex != null) {
+    if (selectedCardIndex != null &&
+        resolution.outcome == BattleOutcome.playerVictory) {
       final selectedCard =
           state.playerTeam.speciesCardSlots[selectedCardIndex].card;
       var equippedPlayerTeam = resolution.playerTeam.equipSpeciesCard(
@@ -176,6 +197,11 @@ class BattleSession {
               .combatants[state.playerTeam.activeIndex]
               .equippedSpeciesCard ==
           selectedCard;
+      if (!cardWasEquipped) {
+        equippedPlayerTeam = equippedPlayerTeam.loseSpeciesCard(
+          selectedCardIndex,
+        );
+      }
       if (cardWasEquipped && selectedCard == SpeciesCard.kingOfTheSkies) {
         final summonResult = _summonDistinctCompanions(
           bearerTeam: equippedPlayerTeam,
@@ -189,6 +215,10 @@ class BattleSession {
       resolution = resolution.copyWith(
         playerTeam: equippedPlayerTeam,
         opponentTeam: opponentTeam,
+      );
+    } else if (selectedCardIndex != null) {
+      resolution = resolution.copyWith(
+        playerTeam: resolution.playerTeam.loseSpeciesCard(selectedCardIndex),
       );
     }
 

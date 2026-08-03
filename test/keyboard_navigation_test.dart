@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesocham/app/mesozoic_champions_app.dart';
+import 'package:mesocham/features/battle/domain/entities/battle_gesture.dart';
+import 'package:mesocham/features/battle/presentation/widgets/gesture_wheel.dart';
 import 'package:mesocham/features/champions/data/local/local_champion_catalog.dart';
+import 'package:mesocham/features/champions/presentation/widgets/battle_gesture_icon.dart';
 import 'package:mesocham/features/decks/domain/entities/player_deck.dart';
 import 'package:mesocham/features/home/data/player_preferences.dart';
 import 'package:mesocham/features/loading/presentation/pages/game_loading_page.dart';
@@ -119,7 +123,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await pumpFor(tester, const Duration(milliseconds: 300));
+    await pumpFor(tester, const Duration(milliseconds: 400));
     expect(focusNodeFor(tester, extinctionColiseum).hasFocus, isTrue);
     expect(find.text('YOUR CHAMPION'), findsNothing);
 
@@ -166,10 +170,10 @@ void main() {
     await pumpFor(tester, const Duration(milliseconds: 800));
 
     final fight = find.byKey(const ValueKey('battle-action-1'));
-    final teamSkill = find.byKey(const ValueKey('battle-action-2'));
-    final swap = find.byKey(const ValueKey('battle-action-4'));
+    final speciesCards = find.byKey(const ValueKey('battle-action-2'));
+    final swap = find.byKey(const ValueKey('battle-action-3'));
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
     await tester.pump();
     expect(focusNodeFor(tester, swap).hasFocus, isTrue);
 
@@ -179,7 +183,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
-    expect(focusNodeFor(tester, teamSkill).hasFocus, isTrue);
+    expect(focusNodeFor(tester, speciesCards).hasFocus, isTrue);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -203,5 +207,437 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await pumpFor(tester, const Duration(milliseconds: 2200));
     expect(focusNodeFor(tester, fight).hasFocus, isTrue);
+  });
+
+  testWidgets(
+    'fight flow animates mirrored rings and previews moves on hover',
+    (tester) async {
+      await pumpGame(tester);
+      tester.view.physicalSize = const Size(835, 528);
+      await tester.pump();
+
+      Navigator.of(
+        tester.element(find.byType(Scaffold)),
+      ).pushNamed<void>('/battle');
+      await pumpFor(tester, const Duration(milliseconds: 800));
+
+      final opponentWheel = find.byKey(const ValueKey('opponent-fight-wheel'));
+      final playerWheel = find.byKey(const ValueKey('player-fight-wheel'));
+      final actionPalette = find.byKey(
+        const ValueKey('animated-battle-action-palette'),
+      );
+      final hiddenOpponentRect = tester.getRect(opponentWheel);
+      final hiddenPlayerRect = tester.getRect(playerWheel);
+      final normalPaletteRect = tester.getRect(actionPalette);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 260));
+      final movingOpponentRect = tester.getRect(opponentWheel);
+      final movingPlayerRect = tester.getRect(playerWheel);
+      await tester.pump(const Duration(milliseconds: 320));
+      final shownOpponentRect = tester.getRect(opponentWheel);
+      final shownPlayerRect = tester.getRect(playerWheel);
+      final fightPaletteRect = tester.getRect(actionPalette);
+
+      expect(
+        movingOpponentRect.center.dy,
+        inExclusiveRange(
+          hiddenOpponentRect.center.dy,
+          shownOpponentRect.center.dy,
+        ),
+      );
+      expect(
+        movingPlayerRect.center.dy,
+        inExclusiveRange(shownPlayerRect.center.dy, hiddenPlayerRect.center.dy),
+      );
+      expect(
+        fightPaletteRect.center.dx,
+        closeTo(normalPaletteRect.center.dx, 0.01),
+      );
+      expect(fightPaletteRect.width, greaterThan(normalPaletteRect.width));
+      expect(
+        find.byKey(const ValueKey('fight-background-filter')),
+        findsOneWidget,
+      );
+      for (final side in ['opponent', 'player']) {
+        expect(find.byKey(ValueKey('$side-fight-ring-outer')), findsOneWidget);
+        expect(find.byKey(ValueKey('$side-fight-ring-inner')), findsOneWidget);
+      }
+      final opponentChampion = tester
+          .widget<GestureWheel>(opponentWheel)
+          .champion;
+      final playerChampion = tester.widget<GestureWheel>(playerWheel).champion;
+      for (final gesture in BattleGesture.values) {
+        for (final (side, champion) in [
+          ('opponent-move', opponentChampion),
+          ('battle-move', playerChampion),
+        ]) {
+          final icon = tester.widget<BattleGestureIcon>(
+            find.descendant(
+              of: find.byKey(ValueKey('$side-${gesture.name}')),
+              matching: find.byType(BattleGestureIcon),
+            ),
+          );
+          expect(icon.critical, champion.moveFor(gesture).isCritical);
+          expect(icon.size, closeTo(72, 0.01));
+        }
+      }
+      final opponentRock = find.byKey(const ValueKey('opponent-move-rock'));
+      final opponentScissors = find.byKey(
+        const ValueKey('opponent-move-scissors'),
+      );
+      final playerRock = find.byKey(const ValueKey('battle-move-rock'));
+      final playerScissors = find.byKey(const ValueKey('battle-move-scissors'));
+      expect(
+        tester.getCenter(opponentRock).dy,
+        greaterThan(tester.getCenter(opponentScissors).dy),
+      );
+      expect(
+        tester.getCenter(playerRock).dy,
+        lessThan(tester.getCenter(playerScissors).dy),
+      );
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1, 1));
+      await mouse.moveTo(tester.getCenter(opponentRock));
+      await tester.pump();
+      final opponentDetails = find.byKey(
+        const ValueKey('opponent-move-details-rock'),
+      );
+      final opponentMove = opponentChampion.moveFor(BattleGesture.rock);
+      final opponentPotency =
+          opponentMove.potency == opponentMove.potency.roundToDouble()
+          ? opponentMove.potency.toStringAsFixed(0)
+          : opponentMove.potency.toStringAsFixed(1);
+      expect(opponentDetails, findsOneWidget);
+      expect(
+        find.descendant(
+          of: opponentDetails,
+          matching: find.text(opponentMove.name),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: opponentDetails,
+          matching: find.text(opponentMove.description),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: opponentDetails,
+          matching: find.text(opponentPotency),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .getRect(opponentDetails)
+            .contains(tester.getCenter(opponentRock)),
+        isFalse,
+      );
+
+      await mouse.moveTo(tester.getCenter(playerRock));
+      await tester.pump();
+      expect(opponentDetails, findsNothing);
+      expect(
+        find.byKey(const ValueKey('player-move-details-rock')),
+        findsOneWidget,
+      );
+
+      for (final gesture in [BattleGesture.scissors, BattleGesture.paper]) {
+        final target = find.byKey(ValueKey('battle-move-${gesture.name}'));
+        final pointerPosition = tester.getCenter(target);
+        await mouse.moveTo(pointerPosition);
+        await tester.pump();
+        final details = find.byKey(
+          ValueKey('player-move-details-${gesture.name}'),
+        );
+        final detailsRect = tester.getRect(details);
+        expect(pointerPosition.dy - detailsRect.bottom, closeTo(10, 0.01));
+        expect(
+          pointerPosition.dx >= detailsRect.left &&
+              pointerPosition.dx <= detailsRect.right,
+          isTrue,
+        );
+      }
+
+      await mouse.moveTo(tester.getCenter(playerRock));
+      await tester.pump();
+
+      await tester.tap(playerRock);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        find.byKey(const ValueKey('selected-battle-move-rock')),
+        findsOneWidget,
+      );
+      expect(find.text('SHOWDOWN'), findsOneWidget);
+      expect(find.text('4  SHOWDOWN'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.numpad4);
+      await tester.pump();
+      expect(
+        focusNodeFor(tester, find.byKey(const ValueKey('showdown'))).hasFocus,
+        isTrue,
+      );
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets('fight palette can switch to either alternate action', (
+    tester,
+  ) async {
+    await pumpGame(tester);
+    tester.view.physicalSize = const Size(835, 528);
+    await tester.pump();
+
+    Navigator.of(
+      tester.element(find.byType(Scaffold)),
+    ).pushNamed<void>('/battle');
+    await pumpFor(tester, const Duration(milliseconds: 800));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    await tester.tap(find.byKey(const ValueKey('battle-move-rock')));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text('SHOWDOWN'), findsOneWidget);
+
+    final speciesCards = find.descendant(
+      of: find.byKey(const ValueKey('fight-palette-action-2')),
+      matching: find.text('SPECIES\nCARDS'),
+    );
+    await tester.tap(speciesCards);
+    await pumpFor(tester, const Duration(milliseconds: 1150));
+    expect(find.byKey(const ValueKey('species-flow-visible')), findsOneWidget);
+    expect(find.text('SHOWDOWN'), findsNothing);
+
+    final fight = find.descendant(
+      of: find.byKey(const ValueKey('species-palette-action-1')),
+      matching: find.text('FIGHT'),
+    );
+    await tester.tap(fight);
+    await pumpFor(tester, const Duration(milliseconds: 1150));
+    expect(
+      find.byKey(const ValueKey('selected-battle-move-rock')),
+      findsNothing,
+    );
+    expect(find.text('SHOWDOWN'), findsNothing);
+
+    final swap = find.descendant(
+      of: find.byKey(const ValueKey('fight-palette-action-3')),
+      matching: find.text('SWAP'),
+    );
+    await tester.tap(swap);
+    await pumpFor(tester, const Duration(milliseconds: 1150));
+    expect(find.byKey(const ValueKey('swap-flow-visible')), findsOneWidget);
+    expect(find.byKey(const ValueKey('species-flow-visible')), findsNothing);
+  });
+
+  testWidgets('expanded swap palette cancels and switches actions', (
+    tester,
+  ) async {
+    await pumpGame(tester);
+    tester.view.physicalSize = const Size(835, 528);
+    await tester.pump();
+
+    Navigator.of(
+      tester.element(find.byType(Scaffold)),
+    ).pushNamed<void>('/battle');
+    await pumpFor(tester, const Duration(milliseconds: 800));
+
+    final palette = find.byKey(
+      const ValueKey('animated-battle-action-palette'),
+    );
+    final playerReserve = find.byKey(const ValueKey('expanded-player-reserve'));
+    final normalPaletteRect = tester.getRect(palette);
+    final hiddenReserveRect = tester.getRect(playerReserve);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    final movingPaletteRect = tester.getRect(palette);
+    final movingReserveRect = tester.getRect(playerReserve);
+    await tester.pump(const Duration(milliseconds: 320));
+    final swapPaletteRect = tester.getRect(palette);
+    final shownReserveRect = tester.getRect(playerReserve);
+
+    expect(
+      movingPaletteRect.center.dx,
+      inExclusiveRange(swapPaletteRect.center.dx, normalPaletteRect.center.dx),
+    );
+    expect(
+      movingPaletteRect.width,
+      inExclusiveRange(normalPaletteRect.width, swapPaletteRect.width),
+    );
+    expect(
+      movingReserveRect.left,
+      inExclusiveRange(shownReserveRect.left, hiddenReserveRect.left),
+    );
+
+    expect(
+      find.byKey(const ValueKey('swap-background-filter')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('expanded-opponent-reserve')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('expanded-player-reserve')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('swap-target-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('swap-target-2')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final expandedSwap = find.byKey(const ValueKey('swap-palette-action-3'));
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.pump();
+    expect(focusNodeFor(tester, expandedSwap).hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('swap-flow-visible')), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    final expandedSpeciesCards = find.descendant(
+      of: find.byKey(const ValueKey('swap-palette-action-2')),
+      matching: find.text('SPECIES\nCARDS'),
+    );
+    await tester.tap(expandedSpeciesCards);
+    await pumpFor(tester, const Duration(milliseconds: 1150));
+    expect(find.byKey(const ValueKey('swap-flow-visible')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('player-species-card-menu')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    expect(find.byKey(const ValueKey('species-flow-visible')), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    final expandedFight = find.descendant(
+      of: find.byKey(const ValueKey('swap-palette-action-1')),
+      matching: find.text('FIGHT'),
+    );
+    await tester.tap(expandedFight);
+    await pumpFor(tester, const Duration(milliseconds: 1150));
+    expect(find.byKey(const ValueKey('swap-flow-visible')), findsNothing);
+    expect(find.byKey(const ValueKey('battle-move-paper')), findsOneWidget);
+  });
+
+  testWidgets('species-card action opens both team menus and selects a card', (
+    tester,
+  ) async {
+    await pumpGame(tester);
+    tester.view.physicalSize = const Size(835, 528);
+    await tester.pump();
+
+    Navigator.of(
+      tester.element(find.byType(Scaffold)),
+    ).pushNamed<void>('/battle');
+    await pumpFor(tester, const Duration(milliseconds: 800));
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
+    final palette = find.byKey(
+      const ValueKey('animated-battle-action-palette'),
+    );
+    final playerSpeciesMenu = find.byKey(
+      const ValueKey('player-species-card-menu'),
+    );
+    final normalPaletteRect = tester.getRect(palette);
+    final hiddenMenuRect = tester.getRect(playerSpeciesMenu);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    final movingPaletteRect = tester.getRect(palette);
+    final movingMenuRect = tester.getRect(playerSpeciesMenu);
+    await tester.pump(const Duration(milliseconds: 320));
+    final speciesPaletteRect = tester.getRect(palette);
+    final shownMenuRect = tester.getRect(playerSpeciesMenu);
+
+    expect(
+      movingPaletteRect.center.dy,
+      inExclusiveRange(
+        speciesPaletteRect.center.dy,
+        normalPaletteRect.center.dy,
+      ),
+    );
+    expect(
+      movingPaletteRect.width,
+      inExclusiveRange(normalPaletteRect.width, speciesPaletteRect.width),
+    );
+    expect(
+      movingMenuRect.top,
+      inExclusiveRange(shownMenuRect.top, hiddenMenuRect.top),
+    );
+
+    expect(
+      find.byKey(const ValueKey('opponent-species-card-menu')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('player-species-card-menu')),
+      findsOneWidget,
+    );
+    for (var index = 0; index < 3; index++) {
+      expect(
+        find.byKey(ValueKey('opponent-species-card-$index')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('player-species-card-$index')),
+        findsOneWidget,
+      );
+    }
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const ValueKey('player-species-card-0')));
+    await pumpFor(tester, const Duration(milliseconds: 220));
+    expect(
+      find.byKey(const ValueKey('player-species-card-menu')),
+      findsOneWidget,
+    );
+    expect(find.text('SELECTED'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+
+    final pendingPanel = find.byKey(
+      const ValueKey('pending-player-species-card-panel'),
+    );
+    final activeChampion = find.byKey(
+      const ValueKey('player-active-champion-card'),
+    );
+    expect(pendingPanel, findsOneWidget);
+    expect(find.text('Activada'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pending-player-species-card-image')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getRect(pendingPanel).right,
+      lessThan(tester.getRect(activeChampion).left),
+    );
+    expect(
+      tester.getRect(pendingPanel).bottom,
+      greaterThanOrEqualTo(tester.view.physicalSize.height),
+    );
   });
 }

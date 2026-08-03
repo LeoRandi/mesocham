@@ -56,8 +56,10 @@ class BattleController extends ChangeNotifier {
   List<int> get playerSwapIndexes => _state.playerSwapIndexes;
   bool get isFightOverlayVisible => _state.isFightOverlayVisible;
   bool get isSwapOverlayVisible => _state.isSwapOverlayVisible;
+  bool get isSpeciesCardOverlayVisible => _state.isSpeciesCardOverlayVisible;
   bool get canShowdown => _state.canShowdown;
   bool get canSwap => _state.canSwap;
+  bool get canOpenSpeciesCards => _state.canOpenSpeciesCards;
   ChampionMove? get selectedPlayerMove => _state.selectedPlayerMove;
   bool get requiresPlayerMoveOption =>
       selectedPlayerMove?.effect == MoveEffect.mixedChoice;
@@ -66,9 +68,17 @@ class BattleController extends ChangeNotifier {
 
   void startFight() => _emit(_session.startFight(_state));
 
+  void cancelFight() => _emit(_session.cancelFight(_state));
+
   void startSwap() => _emit(_session.startSwap(_state));
 
   void cancelSwap() => _emit(_session.cancelSwap(_state));
+
+  void startSpeciesCardSelection() =>
+      _emit(_session.startSpeciesCardSelection(_state));
+
+  void cancelSpeciesCardSelection() =>
+      _emit(_session.cancelSpeciesCardSelection(_state));
 
   void selectPlayerGesture(BattleGesture gesture) {
     _emit(_session.selectPlayerGesture(_state, gesture));

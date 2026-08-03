@@ -46,7 +46,8 @@ class BattleTeam {
     final bearerIndexes = <int>{};
     for (final slot in this.speciesCardSlots) {
       final bearerIndex = slot.bearerIndex;
-      if ((!slot.consumed && bearerIndex != null) ||
+      if ((slot.consumed && slot.lost) ||
+          (!slot.consumed && bearerIndex != null) ||
           (bearerIndex != null &&
               (bearerIndex < 0 || bearerIndex >= combatants.length)) ||
           (bearerIndex != null && !bearerIndexes.add(bearerIndex)) ||
@@ -283,6 +284,7 @@ class BattleTeam {
         bearerIndex < 0 ||
         bearerIndex >= combatants.length ||
         speciesCardSlots[cardSlotIndex].consumed ||
+        speciesCardSlots[cardSlotIndex].lost ||
         combatants[bearerIndex].isDefeated ||
         combatants[bearerIndex].equippedSpeciesCard != null) {
       return this;
@@ -296,6 +298,23 @@ class BattleTeam {
     nextSlots[cardSlotIndex] = nextSlots[cardSlotIndex].equipTo(bearerIndex);
     return BattleTeam(
       combatants: nextCombatants,
+      activeIndex: activeIndex,
+      speciesCardSlots: nextSlots,
+    );
+  }
+
+  BattleTeam loseSpeciesCard(int cardSlotIndex) {
+    if (cardSlotIndex < 0 ||
+        cardSlotIndex >= speciesCardSlots.length ||
+        speciesCardSlots[cardSlotIndex].consumed ||
+        speciesCardSlots[cardSlotIndex].lost) {
+      return this;
+    }
+
+    final nextSlots = [...speciesCardSlots];
+    nextSlots[cardSlotIndex] = nextSlots[cardSlotIndex].markLost();
+    return BattleTeam(
+      combatants: combatants,
       activeIndex: activeIndex,
       speciesCardSlots: nextSlots,
     );

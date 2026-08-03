@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -7,15 +8,19 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../champions/domain/entities/champion_move.dart';
 import '../../../champions/domain/repositories/champion_catalog.dart';
 import '../../../champions/presentation/widgets/champion_card.dart';
-import '../../../companions/domain/entities/companion.dart';
+import '../../../champions/presentation/widgets/champion_type_emblem.dart';
+import '../../../companions/presentation/companion_assets.dart';
 import '../../../companions/presentation/widgets/companion_orb.dart';
 import '../../../decks/domain/entities/player_deck.dart';
 import '../../../home/data/player_preferences.dart';
+import '../../../species_cards/domain/entities/species_card.dart';
+import '../../../species_cards/presentation/species_card_assets.dart';
 import '../../../species_cards/presentation/widgets/species_card_widgets.dart';
 import '../../application/services/battle_session.dart';
 import '../../application/services/fossil_race_team_factory.dart';
 import '../../domain/entities/battle_gesture.dart';
 import '../../domain/entities/battle_resolution.dart';
+import '../../domain/entities/battle_species_card_slot.dart';
 import '../../domain/entities/battle_status.dart';
 import '../../domain/entities/battle_team.dart';
 import '../../domain/entities/combatant.dart';
@@ -26,6 +31,8 @@ import '../controllers/battle_controller.dart';
 import '../widgets/battle_backdrop.dart';
 import '../widgets/battle_controls.dart';
 import '../widgets/gesture_wheel.dart';
+
+enum _BattleLayoutFlow { normal, fight, swap, speciesCards }
 
 class BattleRoomPage extends StatefulWidget {
   const BattleRoomPage({
@@ -46,12 +53,16 @@ class BattleRoomPage extends StatefulWidget {
 class _BattleRoomPageState extends State<BattleRoomPage> {
   static const _preResolutionDelay = Duration(milliseconds: 420);
   static const _resultDisplayDuration = Duration(milliseconds: 1250);
+  // These transitions communicate where the action palette and its menus go,
+  // so keep them long enough to read as motion instead of a layout jump.
+  static const _flowAnimationDuration = Duration(milliseconds: 520);
 
   BattleController? _controller;
   Object? _loadError;
-  bool _combatLogOpen = false;
+  _BattleLayoutFlow _presentedFlow = _BattleLayoutFlow.normal;
+  bool _flowTransitioning = false;
   final _battleActionFocusNodes = List.generate(
-    4,
+    3,
     (index) => FocusNode(debugLabel: 'Battle action ${index + 1}'),
   );
   final _moveFocusNodes = List.generate(
@@ -65,6 +76,13 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   final _swapFocusNodes = List.generate(
     3,
     (index) => FocusNode(debugLabel: 'Battle swap ${index + 1}'),
+  );
+  final _speciesCardFocusNodes = List.generate(
+    3,
+    (index) => FocusNode(debugLabel: 'Species card ${index + 1}'),
+  );
+  final _speciesCardCancelFocusNode = FocusNode(
+    debugLabel: 'Cancel species cards',
   );
   final _showdownFocusNode = FocusNode(debugLabel: 'Showdown');
   final _gameOverMenuFocusNode = FocusNode(debugLabel: 'Game over menu');
@@ -90,7 +108,6 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       setState(() {
         final companionRandomizer = CompanionRandomizer();
         _loadError = null;
-        _combatLogOpen = false;
         _controller = BattleController(
           playerTeam: teams.playerTeam,
           opponentTeam: teams.opponentTeam,
@@ -111,13 +128,83 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     }
   }
 
-  void _startFight() {
-    _controller?.startFight();
+  Future<void> _startFight() async {
+    if (_flowTransitioning || _presentedFlow == _BattleLayoutFlow.fight) return;
+    if (_presentedFlow != _BattleLayoutFlow.normal) {
+      _hideFlowThenStartFight();
+      return;
+    }
+    final controller = _controller;
+    if (controller == null) return;
+    controller.startFight();
+    if (!controller.isFightOverlayVisible) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.fight;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
     _requestFocusAfterFrame(_moveFocusNodes.first);
   }
 
   void _selectSpeciesCard(int index) {
     _controller?.selectPlayerSpeciesCard(index);
+  }
+
+  Future<void> _startSpeciesCards() async {
+    if (_presentedFlow == _BattleLayoutFlow.swap ||
+        _presentedFlow == _BattleLayoutFlow.fight) {
+      _switchFlow(_BattleLayoutFlow.speciesCards);
+      return;
+    }
+    if (_flowTransitioning ||
+        _presentedFlow == _BattleLayoutFlow.speciesCards) {
+      return;
+    }
+    final controller = _controller;
+    if (controller == null) return;
+    controller.startSpeciesCardSelection();
+    if (!controller.isSpeciesCardOverlayVisible) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.speciesCards;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
+    _focusFirstAvailableSpeciesCard(controller);
+  }
+
+  void _focusFirstAvailableSpeciesCard(BattleController controller) {
+    var focusedAvailableCard = false;
+    for (
+      var index = 0;
+      index < controller.playerTeam.speciesCardSlots.length;
+      index++
+    ) {
+      if (controller.state.canSelectPlayerSpeciesCard(index)) {
+        _requestFocusAfterFrame(_speciesCardFocusNodes[index]);
+        focusedAvailableCard = true;
+        break;
+      }
+    }
+    if (!focusedAvailableCard && controller.isSpeciesCardOverlayVisible) {
+      _requestFocusAfterFrame(_speciesCardCancelFocusNode);
+    }
+  }
+
+  Future<void> _cancelSpeciesCards() async {
+    if (_flowTransitioning) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
+    _controller?.cancelSpeciesCardSelection();
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
+    _requestFocusAfterFrame(_battleActionFocusNodes.first);
   }
 
   Future<void> _showdown() async {
@@ -132,6 +219,14 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
     if (!mounted) return;
     if (!controller.completeResolution()) return;
 
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
+
     _requestFocusAfterFrame(
       controller.phase == BattlePhase.gameOver
           ? _rematchFocusNode
@@ -141,22 +236,126 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
 
   void _resetBattle() {
     _controller?.resetBattle();
+    setState(() {
+      _presentedFlow = _BattleLayoutFlow.normal;
+      _flowTransitioning = false;
+    });
     _requestFocusAfterFrame(_battleActionFocusNodes.first);
   }
 
-  void _startSwap() {
-    _controller?.startSwap();
+  Future<void> _startSwap() async {
+    if (_presentedFlow == _BattleLayoutFlow.speciesCards ||
+        _presentedFlow == _BattleLayoutFlow.fight) {
+      _switchFlow(_BattleLayoutFlow.swap);
+      return;
+    }
+    if (_flowTransitioning || _presentedFlow == _BattleLayoutFlow.swap) return;
+    final controller = _controller;
+    if (controller == null) return;
+    controller.startSwap();
+    if (!controller.isSwapOverlayVisible) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.swap;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
     _requestFocusAfterFrame(_swapFocusNodes.first);
   }
 
-  void _cancelSwap() {
+  Future<void> _cancelSwap() async {
+    if (_flowTransitioning) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
     _controller?.cancelSwap();
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
     _requestFocusAfterFrame(_battleActionFocusNodes.first);
+  }
+
+  Future<void> _switchFlow(_BattleLayoutFlow nextFlow) async {
+    if (_flowTransitioning || _presentedFlow == nextFlow) return;
+    final controller = _controller;
+    if (controller == null) return;
+    final previousFlow = _presentedFlow;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+
+    switch (previousFlow) {
+      case _BattleLayoutFlow.fight:
+        controller.cancelFight();
+      case _BattleLayoutFlow.swap:
+        controller.cancelSwap();
+      case _BattleLayoutFlow.speciesCards:
+        controller.cancelSpeciesCardSelection();
+      case _BattleLayoutFlow.normal:
+        break;
+    }
+    if (nextFlow == _BattleLayoutFlow.swap) {
+      controller.startSwap();
+    } else {
+      controller.startSpeciesCardSelection();
+    }
+    setState(() => _presentedFlow = nextFlow);
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
+    if (nextFlow == _BattleLayoutFlow.swap) {
+      _requestFocusAfterFrame(_swapFocusNodes.first);
+    } else {
+      _focusFirstAvailableSpeciesCard(controller);
+    }
+  }
+
+  Future<void> _hideFlowThenStartFight() async {
+    if (_flowTransitioning) return;
+    final controller = _controller;
+    if (controller == null) return;
+    final previousFlow = _presentedFlow;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    if (previousFlow == _BattleLayoutFlow.swap) {
+      controller.cancelSwap();
+    } else {
+      controller.cancelSpeciesCardSelection();
+    }
+    controller.startFight();
+    if (!controller.isFightOverlayVisible) {
+      setState(() => _flowTransitioning = false);
+      return;
+    }
+    setState(() => _presentedFlow = _BattleLayoutFlow.fight);
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted) return;
+    setState(() => _flowTransitioning = false);
+    _requestFocusAfterFrame(_moveFocusNodes.first);
   }
 
   Future<void> _swapPlayerTo(int index) async {
     final controller = _controller;
-    if (controller == null || !controller.beginSwap(index)) return;
+    if (controller == null || _flowTransitioning) return;
+    setState(() {
+      _flowTransitioning = true;
+      _presentedFlow = _BattleLayoutFlow.normal;
+    });
+    await Future<void>.delayed(_flowAnimationDuration);
+    if (!mounted || !controller.beginSwap(index)) {
+      if (mounted) setState(() => _flowTransitioning = false);
+      return;
+    }
+    setState(() => _flowTransitioning = false);
 
     await Future<void>.delayed(_preResolutionDelay);
     if (!mounted) return;
@@ -195,6 +394,10 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
             ],
     BattlePhase.resolving => const [],
     BattlePhase.swapping => _swapFocusNodes,
+    BattlePhase.choosingSpeciesCard => [
+      ..._speciesCardFocusNodes,
+      _speciesCardCancelFocusNode,
+    ],
     BattlePhase.gameOver => [_gameOverMenuFocusNode, _rematchFocusNode],
   };
 
@@ -206,6 +409,8 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
       ..._moveFocusNodes,
       ..._mixedMoveOptionFocusNodes,
       ..._swapFocusNodes,
+      ..._speciesCardFocusNodes,
+      _speciesCardCancelFocusNode,
       _showdownFocusNode,
       _gameOverMenuFocusNode,
       _rematchFocusNode,
@@ -256,33 +461,30 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
                       final compact =
                           constraints.maxHeight < 560 ||
                           constraints.maxWidth < 900;
-                      final mobileLog = constraints.maxWidth < 700;
                       return _BattleRoom(
                         controller: controller,
                         compact: compact,
-                        mobileLog: mobileLog,
-                        combatLogOpen: _combatLogOpen,
+                        presentedFlow: _presentedFlow,
+                        flowTransitioning: _flowTransitioning,
                         battleActionFocusNodes: _battleActionFocusNodes,
                         moveFocusNodes: _moveFocusNodes,
                         mixedMoveOptionFocusNodes: _mixedMoveOptionFocusNodes,
                         swapFocusNodes: _swapFocusNodes,
+                        speciesCardFocusNodes: _speciesCardFocusNodes,
+                        speciesCardCancelFocusNode: _speciesCardCancelFocusNode,
                         showdownFocusNode: _showdownFocusNode,
                         gameOverMenuFocusNode: _gameOverMenuFocusNode,
                         rematchFocusNode: _rematchFocusNode,
                         onFight: _startFight,
+                        onSpeciesCards: _startSpeciesCards,
                         onSelectSpeciesCard: _selectSpeciesCard,
+                        onCancelSpeciesCards: _cancelSpeciesCards,
                         onSwap: _startSwap,
                         onCancelSwap: _cancelSwap,
                         onSelectSwapTarget: _swapPlayerTo,
                         onShowdown: _showdown,
                         onRematch: _resetBattle,
                         onExit: () => Navigator.of(context).pop(),
-                        onOpenCombatLog: () {
-                          setState(() => _combatLogOpen = true);
-                        },
-                        onCloseCombatLog: () {
-                          setState(() => _combatLogOpen = false);
-                        },
                       );
                     },
                   ),
@@ -337,159 +539,166 @@ class _BattleRoom extends StatelessWidget {
   const _BattleRoom({
     required this.controller,
     required this.compact,
-    required this.mobileLog,
-    required this.combatLogOpen,
+    required this.presentedFlow,
+    required this.flowTransitioning,
     required this.battleActionFocusNodes,
     required this.moveFocusNodes,
     required this.mixedMoveOptionFocusNodes,
     required this.swapFocusNodes,
+    required this.speciesCardFocusNodes,
+    required this.speciesCardCancelFocusNode,
     required this.showdownFocusNode,
     required this.gameOverMenuFocusNode,
     required this.rematchFocusNode,
     required this.onFight,
+    required this.onSpeciesCards,
     required this.onSelectSpeciesCard,
+    required this.onCancelSpeciesCards,
     required this.onSwap,
     required this.onCancelSwap,
     required this.onSelectSwapTarget,
     required this.onShowdown,
     required this.onRematch,
     required this.onExit,
-    required this.onOpenCombatLog,
-    required this.onCloseCombatLog,
   });
 
   final BattleController controller;
   final bool compact;
-  final bool mobileLog;
-  final bool combatLogOpen;
+  final _BattleLayoutFlow presentedFlow;
+  final bool flowTransitioning;
   final List<FocusNode> battleActionFocusNodes;
   final List<FocusNode> moveFocusNodes;
   final List<FocusNode> mixedMoveOptionFocusNodes;
   final List<FocusNode> swapFocusNodes;
+  final List<FocusNode> speciesCardFocusNodes;
+  final FocusNode speciesCardCancelFocusNode;
   final FocusNode showdownFocusNode;
   final FocusNode gameOverMenuFocusNode;
   final FocusNode rematchFocusNode;
   final VoidCallback onFight;
+  final VoidCallback onSpeciesCards;
   final ValueChanged<int> onSelectSpeciesCard;
+  final VoidCallback onCancelSpeciesCards;
   final VoidCallback onSwap;
   final VoidCallback onCancelSwap;
   final ValueChanged<int> onSelectSwapTarget;
   final VoidCallback onShowdown;
   final VoidCallback onRematch;
   final VoidCallback onExit;
-  final VoidCallback onOpenCombatLog;
-  final VoidCallback onCloseCombatLog;
 
   @override
   Widget build(BuildContext context) {
-    final overlayVisible = controller.isFightOverlayVisible;
+    final overlayVisible =
+        presentedFlow == _BattleLayoutFlow.fight &&
+        controller.isFightOverlayVisible;
     final resolution = controller.lastResolution;
+    final pendingSpeciesCardIndex = controller.pendingPlayerSpeciesCardIndex;
+    SpeciesCard? pendingPlayerSpeciesCard;
+    if (pendingSpeciesCardIndex != null &&
+        pendingSpeciesCardIndex >= 0 &&
+        pendingSpeciesCardIndex <
+            controller.playerTeam.speciesCardSlots.length) {
+      final pendingSlot =
+          controller.playerTeam.speciesCardSlots[pendingSpeciesCardIndex];
+      if (!pendingSlot.consumed && !pendingSlot.lost) {
+        pendingPlayerSpeciesCard = pendingSlot.card;
+      }
+    }
 
     return Stack(
       fit: StackFit.expand,
       children: [
         const BattleBackdrop(),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final logWidth = math.max(120.0, constraints.maxWidth / 6);
+            final groundSize = (constraints.maxHeight * 0.27)
+                .clamp(86.0, 168.0)
+                .toDouble();
+            final wildCompanion = controller.wildCompanionStack.isEmpty
+                ? null
+                : controller.wildCompanionStack.first;
+            final companionDiameter = groundSize * 0.48;
+            return Stack(
+              children: [
+                Positioned(
+                  left: 20 + logWidth + 8,
+                  top: (constraints.maxHeight - groundSize) / 2,
+                  width: groundSize,
+                  height: groundSize,
+                  child: IgnorePointer(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: Image.asset(
+                            'assets/images/companion_ground.png',
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                          ),
+                        ),
+                        if (wildCompanion != null)
+                          Positioned(
+                            left: (groundSize - companionDiameter) / 2,
+                            top: groundSize * 0.1,
+                            child: CompanionOrb(
+                              key: ValueKey(
+                                'available-companion-${wildCompanion.name}',
+                              ),
+                              companion: wildCompanion,
+                              diameter: companionDiameter,
+                              wild: true,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
         Column(
           children: [
             Expanded(
               child: _ChampionZone(
                 team: controller.opponentTeam,
                 isOpponent: true,
+                showControls: false,
                 compact: compact,
                 resolutionSequence: controller.resolutionSequence,
                 damagedIndexes: resolution?.damagedOpponentIndexes ?? const [],
-                showChampion: !overlayVisible,
+                showChampion: true,
                 fightEnabled: false,
                 swapEnabled: false,
                 speciesCardSelectionEnabled: false,
                 onFight: () {},
-                onSelectSpeciesCard: (_) {},
+                onSpeciesCards: () {},
                 onSwap: () {},
-              ),
-            ),
-            Container(
-              height: compact ? 1 : 1.5,
-              decoration: BoxDecoration(
-                color: AppColors.sand.withValues(alpha: 0.62),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.amber.withValues(alpha: 0.24),
-                    blurRadius: 6,
-                  ),
-                ],
               ),
             ),
             Expanded(
               child: _ChampionZone(
                 team: controller.playerTeam,
                 isOpponent: false,
+                showControls: false,
                 compact: compact,
                 resolutionSequence: controller.resolutionSequence,
                 damagedIndexes: resolution?.damagedPlayerIndexes ?? const [],
-                showChampion: !overlayVisible,
+                showChampion: true,
                 fightEnabled: controller.phase == BattlePhase.command,
                 swapEnabled: controller.canSwap,
-                selectedSpeciesCardIndex:
-                    controller.pendingPlayerSpeciesCardIndex,
                 speciesCardSelectionEnabled:
                     controller.phase == BattlePhase.command,
+                pendingSpeciesCard: pendingPlayerSpeciesCard,
                 battleActionFocusNodes: battleActionFocusNodes,
                 canFocusBattleActions: controller.phase == BattlePhase.command,
                 onFight: onFight,
-                onSelectSpeciesCard: onSelectSpeciesCard,
+                onSpeciesCards: onSpeciesCards,
                 onSwap: onSwap,
               ),
             ),
           ],
-        ),
-        IgnorePointer(
-          child: AnimatedOpacity(
-            opacity: overlayVisible ? 1 : 0,
-            duration: const Duration(milliseconds: 460),
-            curve: Curves.easeInOut,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Color(0xE6140F0C),
-                    Color(0xF20A0807),
-                    Color(0xE6140F0C),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (controller.wildCompanionStack.isNotEmpty)
-          IgnorePointer(
-            child: Align(
-              alignment: const Alignment(-0.34, 0),
-              child: AnimatedOpacity(
-                opacity: overlayVisible ? 0.82 : 1,
-                duration: const Duration(milliseconds: 260),
-                child: _WildCompanionStack(
-                  companions: controller.wildCompanionStack,
-                  compact: compact,
-                ),
-              ),
-            ),
-          ),
-        _MoveSelectionLayer(
-          controller: controller,
-          compact: compact,
-          moveFocusNodes: moveFocusNodes,
-          mixedMoveOptionFocusNodes: mixedMoveOptionFocusNodes,
-          showdownFocusNode: showdownFocusNode,
-          onShowdown: onShowdown,
-        ),
-        _SwapSelectionLayer(
-          controller: controller,
-          compact: compact,
-          focusNodes: swapFocusNodes,
-          onCancel: onCancelSwap,
-          onSelected: onSelectSwapTarget,
         ),
         if (controller.lastResolution != null)
           _ResultBanner(
@@ -505,26 +714,59 @@ class _BattleRoom extends StatelessWidget {
             onRematch: onRematch,
             onExit: onExit,
           ),
-        _CombatLogOverlay(
-          entries: controller.combatLog,
-          mobile: mobileLog,
-          open: combatLogOpen,
-          onOpen: onOpenCombatLog,
-          onClose: onCloseCombatLog,
+        _CombatLogOverlay(entries: controller.combatLog),
+        _FlowBackdrop(
+          visible: overlayVisible,
+          filterKey: const ValueKey('fight-background-filter'),
+          dimOpacity: 0.5,
         ),
-        Positioned(
-          left: compact ? 10 : 18,
-          top: compact ? 8 : 14,
-          child: IconButton(
-            onPressed: onExit,
-            tooltip: 'Back to menu',
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
+        _MoveSelectionLayer(
+          controller: controller,
+          visible: overlayVisible,
+          compact: compact,
+          moveFocusNodes: moveFocusNodes,
+          mixedMoveOptionFocusNodes: mixedMoveOptionFocusNodes,
+          showdownFocusNode: showdownFocusNode,
+          onShowdown: onShowdown,
         ),
-        Positioned(
-          right: compact ? 12 : 22,
-          top: compact ? 10 : 18,
-          child: _ModeBadge(compact: compact),
+        _FlowBackdrop(
+          visible:
+              presentedFlow == _BattleLayoutFlow.swap ||
+              presentedFlow == _BattleLayoutFlow.speciesCards ||
+              (flowTransitioning &&
+                  (controller.isSwapOverlayVisible ||
+                      controller.isSpeciesCardOverlayVisible)),
+          filterKey: const ValueKey('swap-background-filter'),
+        ),
+        _SwapSelectionLayer(
+          controller: controller,
+          compact: compact,
+          visible: presentedFlow == _BattleLayoutFlow.swap,
+          flowTransitioning: flowTransitioning,
+          focusNodes: swapFocusNodes,
+          onSelected: onSelectSwapTarget,
+        ),
+        _SpeciesCardSelectionLayer(
+          controller: controller,
+          compact: compact,
+          visible: presentedFlow == _BattleLayoutFlow.speciesCards,
+          flowTransitioning: flowTransitioning,
+          focusNodes: speciesCardFocusNodes,
+          onSelected: onSelectSpeciesCard,
+        ),
+        _BattleActionPaletteLayer(
+          controller: controller,
+          compact: compact,
+          flow: presentedFlow,
+          flowTransitioning: flowTransitioning,
+          battleActionFocusNodes: battleActionFocusNodes,
+          swapFocusNodes: swapFocusNodes,
+          speciesCardCancelFocusNode: speciesCardCancelFocusNode,
+          onFight: onFight,
+          onSpeciesCards: onSpeciesCards,
+          onCancelSpeciesCards: onCancelSpeciesCards,
+          onSwap: onSwap,
+          onCancelSwap: onCancelSwap,
         ),
       ],
     );
@@ -532,19 +774,9 @@ class _BattleRoom extends StatelessWidget {
 }
 
 class _CombatLogOverlay extends StatefulWidget {
-  const _CombatLogOverlay({
-    required this.entries,
-    required this.mobile,
-    required this.open,
-    required this.onOpen,
-    required this.onClose,
-  });
+  const _CombatLogOverlay({required this.entries});
 
   final List<String> entries;
-  final bool mobile;
-  final bool open;
-  final VoidCallback onOpen;
-  final VoidCallback onClose;
 
   @override
   State<_CombatLogOverlay> createState() => _CombatLogOverlayState();
@@ -562,8 +794,7 @@ class _CombatLogOverlayState extends State<_CombatLogOverlay> {
   @override
   void didUpdateWidget(covariant _CombatLogOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.entries.length != oldWidget.entries.length ||
-        (widget.mobile && widget.open && !oldWidget.open)) {
+    if (widget.entries.length != oldWidget.entries.length) {
       _scrollToLatest();
     }
   }
@@ -589,46 +820,23 @@ class _CombatLogOverlayState extends State<_CombatLogOverlay> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final panelWidth = widget.mobile
-            ? math.min(constraints.maxWidth * 0.82, 360.0)
-            : math.min(constraints.maxWidth * 0.25, 380.0);
-        final availableHeight = math.max(120.0, constraints.maxHeight - 32);
-        final panelHeight = math.min(
-          math.max(240.0, constraints.maxHeight * 0.72),
-          availableHeight,
+        final panelWidth = math.min(
+          math.max(120.0, constraints.maxWidth / 6),
+          math.max(120.0, constraints.maxWidth - 40),
         );
-        final top = (constraints.maxHeight - panelHeight) / 2;
-        final panelLeft = widget.mobile
-            ? (widget.open ? 0.0 : -panelWidth - 8)
-            : 16.0;
-        final toggleLeft = widget.open ? panelWidth : 0.0;
 
         return Stack(
-          clipBehavior: Clip.none,
           children: [
-            AnimatedPositioned(
-              left: panelLeft,
-              top: top,
+            Positioned(
+              left: 20,
+              top: 20,
+              bottom: 20,
               width: panelWidth,
-              height: panelHeight,
-              duration: const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
               child: _CombatLogPanel(
                 entries: widget.entries,
                 scrollController: _scrollController,
               ),
             ),
-            if (widget.mobile)
-              AnimatedPositioned(
-                left: toggleLeft,
-                top: (constraints.maxHeight - 46) / 2,
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutCubic,
-                child: _CombatLogToggle(
-                  open: widget.open,
-                  onPressed: widget.open ? widget.onClose : widget.onOpen,
-                ),
-              ),
           ],
         );
       },
@@ -675,18 +883,20 @@ class _CombatLogPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
+                height: 30,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                 color: AppColors.deepEarth.withValues(alpha: 0.96),
-                child: const Text(
-                  'REGISTRO DE COMBATE',
-                  style: TextStyle(
-                    color: AppColors.amber,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'REGISTRO DE COMBATE',
+                    style: TextStyle(
+                      color: AppColors.amber,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
                   ),
                 ),
               ),
@@ -696,7 +906,7 @@ class _CombatLogPanel extends StatelessWidget {
                   thumbVisibility: true,
                   child: ListView.builder(
                     controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
                     itemCount: entries.length,
                     itemBuilder: (context, index) {
                       final entry = entries[index];
@@ -710,7 +920,7 @@ class _CombatLogPanel extends StatelessWidget {
                           entry,
                           style: TextStyle(
                             color: separator ? AppColors.amber : AppColors.bone,
-                            fontSize: 12,
+                            fontSize: 7,
                             height: 1.3,
                             fontWeight: separator
                                 ? FontWeight.w800
@@ -730,52 +940,11 @@ class _CombatLogPanel extends StatelessWidget {
   }
 }
 
-class _CombatLogToggle extends StatelessWidget {
-  const _CombatLogToggle({required this.open, required this.onPressed});
-
-  final bool open;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: open ? 'Cerrar registro de combate' : 'Abrir registro de combate',
-      child: Material(
-        color: AppColors.deepEarth.withValues(alpha: 0.97),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.horizontal(right: Radius.circular(10)),
-          side: BorderSide(color: AppColors.amber, width: 1.5),
-        ),
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: const BorderRadius.horizontal(
-            right: Radius.circular(10),
-          ),
-          child: SizedBox(
-            width: 38,
-            height: 46,
-            child: Center(
-              child: Text(
-                open ? '<' : '>',
-                style: const TextStyle(
-                  color: AppColors.amber,
-                  fontSize: 23,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ChampionZone extends StatelessWidget {
   const _ChampionZone({
     required this.team,
     required this.isOpponent,
+    required this.showControls,
     required this.compact,
     required this.resolutionSequence,
     required this.damagedIndexes,
@@ -784,15 +953,16 @@ class _ChampionZone extends StatelessWidget {
     required this.swapEnabled,
     required this.speciesCardSelectionEnabled,
     required this.onFight,
-    required this.onSelectSpeciesCard,
+    required this.onSpeciesCards,
     required this.onSwap,
-    this.selectedSpeciesCardIndex,
     this.battleActionFocusNodes,
     this.canFocusBattleActions = false,
-  }) : assert(isOpponent || battleActionFocusNodes?.length == 4);
+    this.pendingSpeciesCard,
+  }) : assert(isOpponent || battleActionFocusNodes?.length == 3);
 
   final BattleTeam team;
   final bool isOpponent;
+  final bool showControls;
   final bool compact;
   final int resolutionSequence;
   final List<int> damagedIndexes;
@@ -801,11 +971,11 @@ class _ChampionZone extends StatelessWidget {
   final bool swapEnabled;
   final bool speciesCardSelectionEnabled;
   final VoidCallback onFight;
-  final ValueChanged<int> onSelectSpeciesCard;
+  final VoidCallback onSpeciesCards;
   final VoidCallback onSwap;
-  final int? selectedSpeciesCardIndex;
   final List<FocusNode>? battleActionFocusNodes;
   final bool canFocusBattleActions;
+  final SpeciesCard? pendingSpeciesCard;
 
   @override
   Widget build(BuildContext context) {
@@ -816,43 +986,43 @@ class _ChampionZone extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final controlsInset = compact ? 52.0 : 78.0;
-        final availableForCard =
-            constraints.maxHeight -
-            (isOpponent ? 0 : controlsInset) -
-            (compact ? 26 : 42);
-        final cardHeight = math
-            .max(
-              compact ? 68.0 : 100.0,
-              math.min(compact ? 108.0 : 196.0, availableForCard),
-            )
+        final cardHeight = math.max(
+          76.0,
+          math.min(220.0, constraints.maxHeight - 58),
+        );
+        final reserveWidth = (constraints.maxWidth * 0.116)
+            .clamp(96.0, 150.0)
             .toDouble();
-        final horizontalPadding = compact ? 12.0 : 32.0;
-        final sidePanelWidth = math
-            .min(
-              compact ? 270.0 : 390.0,
-              math.max(
-                compact ? 210.0 : 300.0,
-                constraints.maxWidth * (compact ? 0.43 : 0.39),
-              ),
-            )
-            .toDouble();
-        final cardGap = compact ? 4.0 : 7.0;
-        final miniCardHeight = math
-            .max(
-              compact ? 30.0 : 48.0,
-              math.min(
-                cardHeight * (compact ? 0.36 : 0.34),
-                compact ? 44.0 : 66.0,
-              ),
-            )
-            .toDouble();
-        final accent = isOpponent ? AppColors.danger : AppColors.teal;
+        final controlsSide = math.min(
+          170.0,
+          math.max(
+            90.0,
+            math.min(constraints.maxHeight * 0.54, constraints.maxWidth * 0.18),
+          ),
+        );
+        final speciesCardsEnabled =
+            speciesCardSelectionEnabled && !team.active.isDefeated;
+        final activeCardWidth = cardHeight * ChampionCard.aspectRatio;
+        final activeCardLeft = (constraints.maxWidth - activeCardWidth) / 2;
+        final pendingGap = compact ? 10.0 : 14.0;
+        final combatLogRight =
+            20 + math.max(120.0, constraints.maxWidth / 6) + 8;
+        final pendingAvailableWidth =
+            activeCardLeft - pendingGap - combatLogRight;
+        final pendingPanelWidth = math.min(
+          reserveWidth,
+          math.max(72.0, pendingAvailableWidth),
+        );
+        final pendingPanelHeight = math.min(
+          constraints.maxHeight * 0.46,
+          pendingPanelWidth * 0.78,
+        );
+        final pendingPanelLeft =
+            activeCardLeft - pendingGap - pendingPanelWidth;
 
         return Stack(
           children: [
             Positioned.fill(
-              bottom: isOpponent ? 0 : controlsInset,
               child: Center(
                 child: AnimatedOpacity(
                   opacity: showChampion ? 1 : 0,
@@ -862,80 +1032,78 @@ class _ChampionZone extends StatelessWidget {
                     scale: showChampion ? 1 : 0.38,
                     duration: const Duration(milliseconds: 430),
                     curve: Curves.easeInBack,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          isOpponent
-                              ? 'RIVAL ACTIVE CHAMPION'
-                              : 'YOUR ACTIVE CHAMPION',
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: compact ? 8 : 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: compact ? 0.8 : 1.15,
-                          ),
-                        ),
-                        SizedBox(height: compact ? 3 : 6),
-                        SpeciesCardBearer(
-                          bearerHeight: cardHeight,
-                          card: combatant.equippedSpeciesCard,
-                          effectActive: true,
-                          child: ChampionCard(
-                            champion: combatant.champion,
-                            height: cardHeight,
-                            currentHealth: combatant.currentHealth,
-                            maximumHealth: combatant.maxHealth,
-                            defeated: combatant.isDefeated,
-                            damageTrigger: activeDamageTrigger,
-                          ),
-                        ),
-                        SizedBox(height: compact ? 2 : 4),
-                        _StatusStrip(combatant: combatant, compact: compact),
-                      ],
+                    child: _ActiveChampionStack(
+                      combatant: combatant,
+                      cardHeight: cardHeight,
+                      isOpponent: isOpponent,
+                      damageTrigger: activeDamageTrigger,
                     ),
                   ),
                 ),
               ),
             ),
             Positioned(
-              top: compact ? 6 : 14,
-              right: horizontalPadding,
-              bottom: (isOpponent ? 0 : controlsInset) + (compact ? 6 : 14),
-              width: sidePanelWidth,
-              child: _BattleSidePanel(
+              top: isOpponent ? 12 : 16,
+              right: -2,
+              bottom: isOpponent ? 16 : 12,
+              width: reserveWidth,
+              child: _ReserveCardGroup(
                 team: team,
                 compact: compact,
-                cardGap: cardGap,
-                miniCardHeight: miniCardHeight,
-                selectedSpeciesCardIndex: selectedSpeciesCardIndex,
-                speciesCardSelectionEnabled: speciesCardSelectionEnabled,
+                accent: isOpponent ? AppColors.danger : AppColors.paper,
                 resolutionSequence: resolutionSequence,
                 damagedIndexes: damagedIndexes,
-                onSelectSpeciesCard: onSelectSpeciesCard,
               ),
             ),
-            if (!isOpponent)
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: compact ? 100 : 180,
-                    right: compact ? 100 : 180,
-                    bottom: compact ? 7 : 14,
-                  ),
-                  child: BattleControls(
-                    onFight: onFight,
-                    onSwap: onSwap,
-                    fightEnabled: fightEnabled,
-                    swapEnabled: swapEnabled,
-                    compact: compact,
-                    focusNodes: battleActionFocusNodes!,
-                    canFocus: canFocusBattleActions,
-                  ),
+            if (!isOpponent && pendingAvailableWidth >= 72)
+              Positioned(
+                left: pendingPanelLeft,
+                bottom: -2,
+                width: pendingPanelWidth,
+                height: pendingPanelHeight,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 380),
+                  reverseDuration: const Duration(milliseconds: 300),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    final motion = Tween<Offset>(
+                      begin: const Offset(0, 1.05),
+                      end: Offset.zero,
+                    ).animate(animation);
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: motion, child: child),
+                    );
+                  },
+                  child: pendingSpeciesCard == null
+                      ? const SizedBox.shrink(
+                          key: ValueKey('no-pending-player-species-card'),
+                        )
+                      : _PendingSpeciesCardPanel(
+                          key: ValueKey(
+                            'pending-player-species-card-${pendingSpeciesCard!.name}',
+                          ),
+                          card: pendingSpeciesCard!,
+                          compact: compact,
+                        ),
+                ),
+              ),
+            if (!isOpponent && showControls)
+              Positioned(
+                right: reserveWidth + 26,
+                top: (constraints.maxHeight - controlsSide) / 2,
+                width: controlsSide,
+                height: controlsSide,
+                child: BattleControls(
+                  onFight: onFight,
+                  onSpeciesCards: onSpeciesCards,
+                  onSwap: onSwap,
+                  fightEnabled: fightEnabled,
+                  speciesCardsEnabled: speciesCardsEnabled,
+                  swapEnabled: swapEnabled,
+                  focusNodes: battleActionFocusNodes!,
+                  canFocus: canFocusBattleActions,
                 ),
               ),
           ],
@@ -945,241 +1113,256 @@ class _ChampionZone extends StatelessWidget {
   }
 }
 
-class _BattleSidePanel extends StatelessWidget {
-  const _BattleSidePanel({
-    required this.team,
-    required this.compact,
-    required this.cardGap,
-    required this.miniCardHeight,
-    required this.selectedSpeciesCardIndex,
-    required this.speciesCardSelectionEnabled,
-    required this.resolutionSequence,
-    required this.damagedIndexes,
-    required this.onSelectSpeciesCard,
+class _ActiveChampionStack extends StatelessWidget {
+  const _ActiveChampionStack({
+    required this.combatant,
+    required this.cardHeight,
+    required this.isOpponent,
+    required this.damageTrigger,
   });
 
-  final BattleTeam team;
-  final bool compact;
-  final double cardGap;
-  final double miniCardHeight;
-  final int? selectedSpeciesCardIndex;
-  final bool speciesCardSelectionEnabled;
-  final int resolutionSequence;
-  final List<int> damagedIndexes;
-  final ValueChanged<int> onSelectSpeciesCard;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: _CompanionGroup(combatant: team.active, compact: compact),
-          ),
-        ),
-        SizedBox(height: compact ? 6 : 12),
-        _SpeciesCardGroup(
-          team: team,
-          compact: compact,
-          cardGap: cardGap,
-          selectedIndex: selectedSpeciesCardIndex,
-          selectionEnabled: speciesCardSelectionEnabled,
-          onSelected: onSelectSpeciesCard,
-        ),
-        SizedBox(height: compact ? 10 : 20),
-        _ReserveCardGroup(
-          compact: compact,
-          cardHeight: miniCardHeight,
-          cardGap: cardGap,
-          team: team,
-          resolutionSequence: resolutionSequence,
-          damagedIndexes: damagedIndexes,
-        ),
-      ],
-    );
-  }
-}
-
-class _CompanionGroup extends StatelessWidget {
-  const _CompanionGroup({required this.combatant, required this.compact});
-
   final Combatant combatant;
-  final bool compact;
+  final double cardHeight;
+  final bool isOpponent;
+  final int damageTrigger;
 
   @override
   Widget build(BuildContext context) {
-    final diameter = compact ? 28.0 : 42.0;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _GroupLabel(label: 'COMPANIONS', compact: compact),
-        SizedBox(height: compact ? 4 : 8),
-        if (combatant.companions.isEmpty)
-          Text(
-            '—',
-            style: TextStyle(
-              color: AppColors.sand.withValues(alpha: 0.45),
-              fontSize: compact ? 12 : 17,
-              fontWeight: FontWeight.w800,
-            ),
-          )
-        else
-          SizedBox(
-            height: diameter,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (
-                    var index = 0;
-                    index < combatant.companions.length;
-                    index++
-                  )
-                    Padding(
-                      padding: EdgeInsets.only(
-                        left: index == 0 ? 0 : (compact ? 4 : 7),
-                      ),
-                      child: CompanionOrb(
-                        key: ValueKey(
-                          '${combatant.champion.id}-$index-'
-                          '${combatant.companions[index].name}',
-                        ),
-                        companion: combatant.companions[index],
-                        diameter: diameter,
-                      ),
-                    ),
-                ],
+    final cardWidth = cardHeight * ChampionCard.aspectRatio;
+    final sideExtent = cardHeight * 0.3;
+    final companionDiameter = cardHeight * 0.25;
+    final companionTop = cardHeight * 0.07;
+    final availableCompanionHeight = cardHeight * 0.86 - companionDiameter;
+    final companionStep = combatant.companions.length <= 1
+        ? 0.0
+        : math.min(
+            companionDiameter * 0.72,
+            availableCompanionHeight / (combatant.companions.length - 1),
+          );
+    final speciesCard = combatant.equippedSpeciesCard;
+    final speciesWidth = cardHeight * 0.52;
+    final speciesHeight = cardHeight * 0.34;
+
+    return SizedBox(
+      width: cardWidth + sideExtent * 2,
+      height: cardHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var index = 0; index < combatant.companions.length; index++)
+            Positioned(
+              left: sideExtent - companionDiameter * 0.58,
+              top: companionTop + companionStep * index,
+              child: CompanionOrb(
+                key: ValueKey(
+                  '${isOpponent ? 'opponent' : 'player'}-companion-'
+                  '$index-${combatant.companions[index].name}',
+                ),
+                companion: combatant.companions[index],
+                diameter: companionDiameter,
               ),
             ),
+          if (speciesCard != null)
+            Positioned(
+              left: sideExtent + cardWidth - speciesWidth * 0.32 - 12,
+              top: cardHeight * 0.36 - speciesHeight / 2,
+              child: _ActiveSpeciesCard(
+                card: speciesCard,
+                accent: isOpponent ? AppColors.danger : AppColors.paper,
+                width: speciesWidth,
+                height: speciesHeight,
+              ),
+            ),
+          Positioned(
+            left: sideExtent,
+            child: ChampionCard(
+              key: ValueKey(
+                '${isOpponent ? 'opponent' : 'player'}-active-champion-card',
+              ),
+              champion: combatant.champion,
+              height: cardHeight,
+              currentHealth: combatant.currentHealth,
+              maximumHealth: combatant.maxHealth,
+              defeated: combatant.isDefeated,
+              obscured: false,
+              damageTrigger: damageTrigger,
+            ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _WildCompanionStack extends StatelessWidget {
-  const _WildCompanionStack({required this.companions, required this.compact});
+class _PendingSpeciesCardPanel extends StatelessWidget {
+  const _PendingSpeciesCardPanel({
+    super.key,
+    required this.card,
+    required this.compact,
+  });
 
-  final List<Companion> companions;
+  final SpeciesCard card;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final diameter = compact ? 62.0 : 92.0;
-    final visibleCount = companions.length;
-    final horizontalOffset = diameter * 0.14;
-    final verticalOffset = diameter * 0.1;
+    final tooltip = '${card.name}\n${card.effectDescription}';
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 360),
-      switchInCurve: Curves.easeOutBack,
-      switchOutCurve: Curves.easeIn,
-      child: SizedBox(
-        key: ObjectKey(companions),
-        width: diameter + horizontalOffset * (visibleCount - 1),
-        height:
-            diameter +
-            verticalOffset * (visibleCount - 1) +
-            (compact ? 22 : 30),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (var index = visibleCount - 1; index >= 1; index--)
-              Positioned(
-                left: horizontalOffset * index,
-                top: verticalOffset * (visibleCount - 1 - index),
-                child: CompanionOrb(
-                  companion: companions[index],
-                  diameter: diameter * (1 - math.min(index, 3) * 0.1),
-                  wild: true,
-                  queued: true,
-                ),
-              ),
-            Positioned(
-              left: 0,
-              top: verticalOffset * (visibleCount - 1),
-              child: CompanionOrb(
-                companion: companions.first,
-                diameter: diameter,
-                wild: true,
-              ),
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Semantics(
+        key: const ValueKey('pending-player-species-card-panel'),
+        image: true,
+        label: '$tooltip. Activada.',
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.ink.withValues(alpha: 0.82),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(13),
+              topRight: Radius.circular(13),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Text(
-                companions.length == 1
-                    ? 'WILD COMPANION'
-                    : 'WILD COMPANION  ·  ${companions.length - 1} QUEUED',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.amber,
-                  fontSize: compact ? 7 : 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: compact ? 0.6 : 0.9,
-                  shadows: const [Shadow(color: Colors.black, blurRadius: 5)],
-                ),
+            border: Border.all(color: AppColors.paper, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.42),
+                blurRadius: 10,
+                offset: const Offset(0, -3),
               ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              compact ? 5 : 7,
+              compact ? 5 : 7,
+              compact ? 5 : 7,
+              compact ? 4 : 6,
             ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Activada',
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.bone,
+                    fontSize: compact ? 9 : 11,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                SizedBox(height: compact ? 4 : 6),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Image.asset(
+                      card.assetPath,
+                      key: const ValueKey('pending-player-species-card-image'),
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _SpeciesCardGroup extends StatelessWidget {
-  const _SpeciesCardGroup({
-    required this.team,
-    required this.compact,
-    required this.cardGap,
-    required this.selectedIndex,
-    required this.selectionEnabled,
-    required this.onSelected,
+class _ActiveSpeciesCard extends StatelessWidget {
+  const _ActiveSpeciesCard({
+    required this.card,
+    required this.accent,
+    required this.width,
+    required this.height,
   });
 
-  final BattleTeam team;
-  final bool compact;
-  final double cardGap;
-  final int? selectedIndex;
-  final bool selectionEnabled;
-  final ValueChanged<int> onSelected;
+  final SpeciesCard card;
+  final Color accent;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _GroupLabel(label: 'SPECIES CARDS', compact: compact),
-        SizedBox(height: compact ? 4 : 8),
-        Row(
-          children: [
-            for (var index = 0; index < team.speciesCardSlots.length; index++)
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(left: index == 0 ? 0 : cardGap),
-                  child: AspectRatio(
-                    aspectRatio: 1.5,
-                    child: SpeciesCardTile(
-                      key: ValueKey('species-card-$index'),
-                      card: team.speciesCardSlots[index].card,
-                      selected: selectedIndex == index,
-                      equipped: team.speciesCardSlots[index].consumed,
-                      enabled:
-                          selectionEnabled &&
-                          !team.speciesCardSlots[index].consumed &&
-                          team.active.equippedSpeciesCard == null &&
-                          !team.active.isDefeated,
-                      onPressed: () => onSelected(index),
+    final tooltip = '${card.name}\n${card.effectDescription}';
+
+    return Transform.rotate(
+      angle: -math.pi / 2,
+      child: Tooltip(
+        message: tooltip,
+        waitDuration: const Duration(milliseconds: 300),
+        child: Semantics(
+          image: true,
+          label: '$tooltip. Active.',
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: AppColors.deepEarth,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: accent, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          blurRadius: 7,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      card.assetPath,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
                     ),
                   ),
                 ),
-              ),
-          ],
+                Positioned(
+                  left: width * 0.34,
+                  bottom: -height * 0.13,
+                  width: width * 0.32,
+                  height: height * 0.28,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accent,
+                      border: Border.all(color: AppColors.ink),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: const Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 3),
+                          child: Text(
+                            'Active',
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -1187,16 +1370,14 @@ class _SpeciesCardGroup extends StatelessWidget {
 class _ReserveCardGroup extends StatelessWidget {
   const _ReserveCardGroup({
     required this.compact,
-    required this.cardHeight,
-    required this.cardGap,
+    required this.accent,
     required this.team,
     this.resolutionSequence = 0,
     this.damagedIndexes = const [],
   });
 
   final bool compact;
-  final double cardHeight;
-  final double cardGap;
+  final Color accent;
   final BattleTeam team;
   final int resolutionSequence;
   final List<int> damagedIndexes;
@@ -1208,76 +1389,102 @@ class _ReserveCardGroup extends StatelessWidget {
         if (index != team.activeIndex) index,
     ];
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _GroupLabel(label: 'RESERVE', compact: compact),
-        SizedBox(height: compact ? 4 : 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0x1A130F0B),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(15),
+          bottomLeft: Radius.circular(15),
+        ),
+        border: Border.all(color: accent, width: 2),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 5 : 7,
+          compact ? 6 : 8,
+          compact ? 5 : 7,
+          compact ? 5 : 7,
+        ),
+        child: Column(
           children: [
-            for (var position = 0; position < reserveIndexes.length; position++)
-              Padding(
-                padding: EdgeInsets.only(left: position == 0 ? 0 : cardGap),
-                child: SpeciesCardBearer(
-                  bearerHeight: cardHeight,
-                  card: team
-                      .combatants[reserveIndexes[position]]
-                      .equippedSpeciesCard,
-                  effectActive: false,
-                  mini: true,
-                  child: MiniChampionCard.combatant(
-                    key: ValueKey(
-                      '${team.activeIndex}-${reserveIndexes[position]}',
-                    ),
-                    size: cardHeight,
-                    imageAssetPath:
-                        team
-                            .combatants[reserveIndexes[position]]
-                            .champion
-                            .closeUpAssetPath ??
-                        team
-                            .combatants[reserveIndexes[position]]
-                            .champion
-                            .imageAssetPath,
-                    currentHealth:
-                        team.combatants[reserveIndexes[position]].currentHealth,
-                    maximumHealth:
-                        team.combatants[reserveIndexes[position]].maxHealth,
-                    defeated:
-                        team.combatants[reserveIndexes[position]].isDefeated,
-                    obscured: false,
-                    damageTrigger:
-                        damagedIndexes.contains(reserveIndexes[position])
-                        ? resolutionSequence
-                        : 0,
-                  ),
-                ),
+            Text(
+              'Reserve',
+              style: TextStyle(
+                color: AppColors.bone,
+                fontSize: compact ? 12 : 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
               ),
+            ),
+            SizedBox(height: compact ? 5 : 8),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final gap = compact ? 6.0 : 9.0;
+                  final cardHeight = math.min(
+                    (constraints.maxHeight -
+                            gap * math.max(0, reserveIndexes.length - 1)) /
+                        math.max(1, reserveIndexes.length),
+                    (constraints.maxWidth - 4) / 0.7,
+                  );
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      for (
+                        var position = 0;
+                        position < reserveIndexes.length;
+                        position++
+                      ) ...[
+                        SpeciesCardBearer(
+                          bearerHeight: cardHeight,
+                          card: team
+                              .combatants[reserveIndexes[position]]
+                              .equippedSpeciesCard,
+                          effectActive: false,
+                          mini: true,
+                          child: MiniChampionCard.combatant(
+                            key: ValueKey(
+                              '${team.activeIndex}-'
+                              '${reserveIndexes[position]}',
+                            ),
+                            size: cardHeight,
+                            imageAssetPath:
+                                team
+                                    .combatants[reserveIndexes[position]]
+                                    .champion
+                                    .closeUpAssetPath ??
+                                team
+                                    .combatants[reserveIndexes[position]]
+                                    .champion
+                                    .imageAssetPath,
+                            currentHealth: team
+                                .combatants[reserveIndexes[position]]
+                                .currentHealth,
+                            maximumHealth: team
+                                .combatants[reserveIndexes[position]]
+                                .maxHealth,
+                            defeated: team
+                                .combatants[reserveIndexes[position]]
+                                .isDefeated,
+                            obscured: false,
+                            damageTrigger:
+                                damagedIndexes.contains(
+                                  reserveIndexes[position],
+                                )
+                                ? resolutionSequence
+                                : 0,
+                          ),
+                        ),
+                        if (position != reserveIndexes.length - 1)
+                          SizedBox(height: gap),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
           ],
         ),
-      ],
-    );
-  }
-}
-
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel({required this.label, required this.compact});
-
-  final String label;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: TextStyle(
-        color: AppColors.bone.withValues(alpha: 0.86),
-        fontSize: compact ? 7.5 : 10,
-        fontWeight: FontWeight.w900,
-        letterSpacing: compact ? 0.65 : 0.95,
-        shadows: const [Shadow(color: Colors.black87, blurRadius: 3)],
       ),
     );
   }
@@ -1286,6 +1493,7 @@ class _GroupLabel extends StatelessWidget {
 class _MoveSelectionLayer extends StatelessWidget {
   const _MoveSelectionLayer({
     required this.controller,
+    required this.visible,
     required this.compact,
     required this.moveFocusNodes,
     required this.mixedMoveOptionFocusNodes,
@@ -1294,6 +1502,7 @@ class _MoveSelectionLayer extends StatelessWidget {
   });
 
   final BattleController controller;
+  final bool visible;
   final bool compact;
   final List<FocusNode> moveFocusNodes;
   final List<FocusNode> mixedMoveOptionFocusNodes;
@@ -1302,106 +1511,127 @@ class _MoveSelectionLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = controller.isFightOverlayVisible;
     final selecting = controller.phase == BattlePhase.choosingMove;
 
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: const Duration(milliseconds: 360),
-        curve: Curves.easeOut,
-        child: AnimatedScale(
-          scale: visible ? 1 : 0.82,
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutBack,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Column(
-                children: [
-                  Expanded(
+    return ExcludeFocus(
+      excluding: !visible,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final halfHeight = constraints.maxHeight / 2;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: halfHeight,
+                  child: _FlowPanelMotion(
+                    key: const ValueKey('opponent-fight-wheel-motion'),
+                    visible: visible,
+                    hiddenOffset: const Offset(0, -1.12),
                     child: Center(
                       child: GestureWheel(
+                        key: const ValueKey('opponent-fight-wheel'),
                         champion: controller.opponent.champion,
                         selected: null,
                         enabled: false,
                         compact: compact,
                         label: 'Rival move wheel',
+                        isOpponent: true,
+                        showDetails: visible,
                       ),
                     ),
                   ),
-                  SizedBox(height: compact ? 16 : 24),
-                  Expanded(
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: halfHeight,
+                  child: _FlowPanelMotion(
+                    key: const ValueKey('player-fight-wheel-motion'),
+                    visible: visible,
+                    hiddenOffset: const Offset(0, 1.12),
                     child: Center(
                       child: GestureWheel(
+                        key: const ValueKey('player-fight-wheel'),
                         champion: controller.player.champion,
                         selected: controller.playerGesture,
                         onSelected: controller.selectPlayerGesture,
                         enabled: selecting,
                         compact: compact,
                         label: 'Choose your move',
+                        isOpponent: false,
+                        showDetails: visible,
                         focusNodes: moveFocusNodes,
                       ),
                     ),
                   ),
-                ],
-              ),
-              if (selecting && controller.requiresPlayerMoveOption)
-                Positioned(
-                  left: compact ? 8 : 28,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _MixedMoveOptionPanel(
-                      compact: compact,
-                      choiceType:
-                          controller.selectedPlayerMove!.mixedMoveChoice,
-                      selectedOption: controller.playerMoveOption,
-                      focusNodes: mixedMoveOptionFocusNodes,
-                      onSelected: controller.selectPlayerMoveOption,
-                    ),
-                  ),
                 ),
-              Positioned(
-                right: compact ? 10 : 42,
-                top: 0,
-                bottom: 0,
-                child: Center(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 230),
-                    transitionBuilder: (child, animation) => ScaleTransition(
-                      scale: CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutBack,
+                if (selecting && controller.requiresPlayerMoveOption)
+                  Positioned(
+                    left: compact ? 8 : 28,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _MixedMoveOptionPanel(
+                        compact: compact,
+                        choiceType:
+                            controller.selectedPlayerMove!.mixedMoveChoice,
+                        selectedOption: controller.playerMoveOption,
+                        focusNodes: mixedMoveOptionFocusNodes,
+                        onSelected: controller.selectPlayerMoveOption,
                       ),
-                      child: FadeTransition(opacity: animation, child: child),
                     ),
-                    child: controller.canShowdown
-                        ? FilledButton.icon(
-                            key: const ValueKey('showdown'),
-                            focusNode: showdownFocusNode,
-                            onPressed: onShowdown,
-                            icon: const Icon(Icons.bolt_rounded),
-                            label: const Text('4  SHOWDOWN'),
-                            style: FilledButton.styleFrom(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: compact ? 12 : 22,
-                                vertical: compact ? 12 : 17,
+                  ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: halfHeight - (compact ? 20 : 25),
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 230),
+                      transitionBuilder: (child, animation) => ScaleTransition(
+                        scale: CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutBack,
+                        ),
+                        child: FadeTransition(opacity: animation, child: child),
+                      ),
+                      child: controller.canShowdown
+                          ? FilledButton.icon(
+                              key: const ValueKey('showdown'),
+                              focusNode: showdownFocusNode,
+                              onPressed: onShowdown,
+                              icon: const Icon(Icons.bolt_rounded),
+                              label: const Text('SHOWDOWN'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.ink,
+                                foregroundColor: AppColors.teal,
+                                side: BorderSide(
+                                  color: AppColors.bone.withValues(alpha: 0.7),
+                                ),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: compact ? 16 : 26,
+                                  vertical: compact ? 11 : 15,
+                                ),
+                                textStyle: TextStyle(
+                                  fontSize: compact ? 9 : 12,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: compact ? 0.5 : 1,
+                                ),
                               ),
-                              textStyle: TextStyle(
-                                fontSize: compact ? 9 : 12,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: compact ? 0.5 : 1,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(key: ValueKey('empty')),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('empty')),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1494,229 +1724,1286 @@ class _MixedMoveOptionPanel extends StatelessWidget {
   }
 }
 
+class _BattleActionPaletteLayer extends StatelessWidget {
+  const _BattleActionPaletteLayer({
+    required this.controller,
+    required this.compact,
+    required this.flow,
+    required this.flowTransitioning,
+    required this.battleActionFocusNodes,
+    required this.swapFocusNodes,
+    required this.speciesCardCancelFocusNode,
+    required this.onFight,
+    required this.onSpeciesCards,
+    required this.onCancelSpeciesCards,
+    required this.onSwap,
+    required this.onCancelSwap,
+  });
+
+  final BattleController controller;
+  final bool compact;
+  final _BattleLayoutFlow flow;
+  final bool flowTransitioning;
+  final List<FocusNode> battleActionFocusNodes;
+  final List<FocusNode> swapFocusNodes;
+  final FocusNode speciesCardCancelFocusNode;
+  final VoidCallback onFight;
+  final VoidCallback onSpeciesCards;
+  final VoidCallback onCancelSpeciesCards;
+  final VoidCallback onSwap;
+  final VoidCallback onCancelSwap;
+
+  @override
+  Widget build(BuildContext context) {
+    final actionPaletteVisible =
+        controller.phase == BattlePhase.command ||
+        controller.isFightOverlayVisible ||
+        controller.phase == BattlePhase.swapping ||
+        controller.phase == BattlePhase.choosingSpeciesCard;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final halfHeight = constraints.maxHeight / 2;
+        final normalReserveWidth = (constraints.maxWidth * 0.116)
+            .clamp(96.0, 150.0)
+            .toDouble();
+        final playerPanelWidth = (constraints.maxWidth * 0.345)
+            .clamp(238.0, 390.0)
+            .toDouble();
+        final menuRight = compact ? 42.0 : 58.0;
+        final normalSide = math.min(
+          170.0,
+          math.max(
+            90.0,
+            math.min(halfHeight * 0.54, constraints.maxWidth * 0.18),
+          ),
+        );
+        final swapSide = math.min(
+          170.0,
+          math.max(
+            100.0,
+            math.min(halfHeight * 0.62, constraints.maxWidth * 0.18),
+          ),
+        );
+        final fightSide = math.min(
+          170.0,
+          math.max(
+            100.0,
+            math.min(halfHeight * 0.58, constraints.maxWidth * 0.18),
+          ),
+        );
+        final speciesSide = math.min(
+          170.0,
+          math.max(
+            100.0,
+            math.min(constraints.maxHeight * 0.28, constraints.maxWidth * 0.17),
+          ),
+        );
+
+        final (right, top, width, height) = switch (flow) {
+          _BattleLayoutFlow.normal => (
+            normalReserveWidth + 26,
+            halfHeight + (halfHeight - normalSide) / 2,
+            normalSide,
+            normalSide,
+          ),
+          _BattleLayoutFlow.fight => (
+            normalReserveWidth +
+                26 +
+                (normalSide -
+                        fightSide * BattleControls.expandedFightWidthFactor) /
+                    2,
+            halfHeight +
+                (halfHeight -
+                        fightSide * BattleControls.expandedFightHeightFactor) /
+                    2 -
+                (compact ? 20 : 28),
+            fightSide * BattleControls.expandedFightWidthFactor,
+            fightSide * BattleControls.expandedFightHeightFactor,
+          ),
+          _BattleLayoutFlow.swap => (
+            playerPanelWidth + (compact ? 20 : 26),
+            halfHeight +
+                (halfHeight -
+                        swapSide * BattleControls.expandedSwapHeightFactor) /
+                    2,
+            swapSide * BattleControls.expandedSwapWidthFactor,
+            swapSide * BattleControls.expandedSwapHeightFactor,
+          ),
+          _BattleLayoutFlow.speciesCards => (
+            menuRight + (compact ? 86 : 112),
+            (constraints.maxHeight -
+                    speciesSide *
+                        BattleControls.expandedSpeciesCardsHeightFactor) /
+                2,
+            speciesSide * BattleControls.expandedSpeciesCardsWidthFactor,
+            speciesSide * BattleControls.expandedSpeciesCardsHeightFactor,
+          ),
+        };
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _AnimatedPalettePlacement(
+              key: const ValueKey('animated-battle-action-palette'),
+              targetRect: Rect.fromLTWH(
+                constraints.maxWidth - right - width,
+                top,
+                width,
+                height,
+              ),
+              child: ExcludeFocus(
+                excluding: flowTransitioning || !actionPaletteVisible,
+                child: IgnorePointer(
+                  ignoring: flowTransitioning || !actionPaletteVisible,
+                  child: AnimatedOpacity(
+                    opacity: actionPaletteVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: _AnimatedBattleControls(
+                      controller: controller,
+                      flow: flow,
+                      battleActionFocusNodes: battleActionFocusNodes,
+                      swapFocusNodes: swapFocusNodes,
+                      speciesCardCancelFocusNode: speciesCardCancelFocusNode,
+                      onFight: onFight,
+                      onSpeciesCards: onSpeciesCards,
+                      onCancelSpeciesCards: onCancelSpeciesCards,
+                      onSwap: onSwap,
+                      onCancelSwap: onCancelSwap,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AnimatedPalettePlacement extends StatefulWidget {
+  const _AnimatedPalettePlacement({
+    super.key,
+    required this.targetRect,
+    required this.child,
+  });
+
+  final Rect targetRect;
+  final Widget child;
+
+  @override
+  State<_AnimatedPalettePlacement> createState() =>
+      _AnimatedPalettePlacementState();
+}
+
+class _AnimatedPalettePlacementState extends State<_AnimatedPalettePlacement>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Rect _fromRect;
+  late Rect _toRect;
+
+  @override
+  void initState() {
+    super.initState();
+    _fromRect = widget.targetRect;
+    _toRect = widget.targetRect;
+    _controller = AnimationController(
+      vsync: this,
+      duration: _BattleRoomPageState._flowAnimationDuration,
+      animationBehavior: AnimationBehavior.preserve,
+      value: 1,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedPalettePlacement oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetRect == widget.targetRect) return;
+    _fromRect = _currentRect;
+    _toRect = widget.targetRect;
+    _controller.forward(from: 0);
+  }
+
+  Rect get _currentRect => Rect.lerp(
+    _fromRect,
+    _toRect,
+    Curves.easeInOutCubic.transform(_controller.value),
+  )!;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final rect = _currentRect;
+        return Positioned(
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          child: child!,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _AnimatedBattleControls extends StatefulWidget {
+  const _AnimatedBattleControls({
+    required this.controller,
+    required this.flow,
+    required this.battleActionFocusNodes,
+    required this.swapFocusNodes,
+    required this.speciesCardCancelFocusNode,
+    required this.onFight,
+    required this.onSpeciesCards,
+    required this.onCancelSpeciesCards,
+    required this.onSwap,
+    required this.onCancelSwap,
+  });
+
+  final BattleController controller;
+  final _BattleLayoutFlow flow;
+  final List<FocusNode> battleActionFocusNodes;
+  final List<FocusNode> swapFocusNodes;
+  final FocusNode speciesCardCancelFocusNode;
+  final VoidCallback onFight;
+  final VoidCallback onSpeciesCards;
+  final VoidCallback onCancelSpeciesCards;
+  final VoidCallback onSwap;
+  final VoidCallback onCancelSwap;
+
+  @override
+  State<_AnimatedBattleControls> createState() =>
+      _AnimatedBattleControlsState();
+}
+
+class _AnimatedBattleControlsState extends State<_AnimatedBattleControls>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _expansionController;
+  _BattleLayoutFlow _expansionFlow = _BattleLayoutFlow.normal;
+
+  @override
+  void initState() {
+    super.initState();
+    _expansionController = AnimationController(
+      vsync: this,
+      duration: _BattleRoomPageState._flowAnimationDuration,
+      animationBehavior: AnimationBehavior.preserve,
+    );
+    if (widget.flow != _BattleLayoutFlow.normal) {
+      _expansionFlow = widget.flow;
+      _expansionController.value = 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedBattleControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.flow == widget.flow) return;
+    if (widget.flow == _BattleLayoutFlow.normal) {
+      _expansionController.reverse();
+    } else {
+      _expansionFlow = widget.flow;
+      _expansionController.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _expansionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final swapEnabled =
+        widget.controller.playerSwapIndexes.isNotEmpty &&
+        !widget.controller.player.hasStatus(StatusType.swapLocked);
+    final focusNodes = switch (widget.flow) {
+      _BattleLayoutFlow.normal => widget.battleActionFocusNodes,
+      _BattleLayoutFlow.fight => <FocusNode?>[
+        null,
+        widget.battleActionFocusNodes[1],
+        widget.battleActionFocusNodes[2],
+      ],
+      _BattleLayoutFlow.swap => <FocusNode?>[
+        null,
+        null,
+        widget.swapFocusNodes[2],
+      ],
+      _BattleLayoutFlow.speciesCards => <FocusNode?>[
+        null,
+        widget.speciesCardCancelFocusNode,
+        null,
+      ],
+    };
+    final actionKeyPrefix = switch (widget.flow) {
+      _BattleLayoutFlow.normal => 'battle-action',
+      _BattleLayoutFlow.fight => 'fight-palette-action',
+      _BattleLayoutFlow.swap => 'swap-palette-action',
+      _BattleLayoutFlow.speciesCards => 'species-palette-action',
+    };
+
+    return AnimatedBuilder(
+      animation: _expansionController,
+      builder: (context, child) {
+        return BattleControls(
+          onFight: widget.onFight,
+          onSpeciesCards: widget.flow == _BattleLayoutFlow.speciesCards
+              ? widget.onCancelSpeciesCards
+              : widget.onSpeciesCards,
+          onSwap: widget.flow == _BattleLayoutFlow.swap
+              ? widget.onCancelSwap
+              : widget.onSwap,
+          fightEnabled: widget.flow == _BattleLayoutFlow.fight
+              ? false
+              : widget.flow == _BattleLayoutFlow.normal
+              ? widget.controller.phase == BattlePhase.command
+              : true,
+          speciesCardsEnabled: widget.flow == _BattleLayoutFlow.normal
+              ? widget.controller.canOpenSpeciesCards
+              : !widget.controller.player.isDefeated,
+          swapEnabled: widget.flow == _BattleLayoutFlow.normal
+              ? widget.controller.canSwap
+              : widget.flow == _BattleLayoutFlow.swap || swapEnabled,
+          focusNodes: focusNodes,
+          canFocus: true,
+          expandedFight: _expansionFlow == _BattleLayoutFlow.fight,
+          expandedSwap: _expansionFlow == _BattleLayoutFlow.swap,
+          expandedSpeciesCards:
+              _expansionFlow == _BattleLayoutFlow.speciesCards,
+          expansionProgress: Curves.easeInOutCubic.transform(
+            _expansionController.value,
+          ),
+          actionKeyPrefix: actionKeyPrefix,
+          dimDisabledActions:
+              widget.flow != _BattleLayoutFlow.swap &&
+              widget.flow != _BattleLayoutFlow.fight,
+        );
+      },
+    );
+  }
+}
+
+class _FlowBackdrop extends StatefulWidget {
+  const _FlowBackdrop({
+    required this.visible,
+    required this.filterKey,
+    this.dimOpacity = 0.42,
+  });
+
+  final bool visible;
+  final Key filterKey;
+  final double dimOpacity;
+
+  @override
+  State<_FlowBackdrop> createState() => _FlowBackdropState();
+}
+
+class _FlowBackdropState extends State<_FlowBackdrop>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _BattleRoomPageState._flowAnimationDuration,
+      animationBehavior: AnimationBehavior.preserve,
+      value: widget.visible ? 1 : 0,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _FlowBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible == widget.visible) return;
+    if (widget.visible) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final amount = Curves.easeInOutCubic.transform(_controller.value);
+            return BackdropFilter(
+              key: widget.filterKey,
+              filter: ui.ImageFilter.blur(
+                sigmaX: 4 * amount,
+                sigmaY: 4 * amount,
+              ),
+              child: ColoredBox(
+                color: Colors.black.withValues(
+                  alpha: widget.dimOpacity * amount,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _FlowPanelMotion extends StatefulWidget {
+  const _FlowPanelMotion({
+    super.key,
+    required this.visible,
+    required this.hiddenOffset,
+    required this.child,
+  });
+
+  final bool visible;
+  final Offset hiddenOffset;
+  final Widget child;
+
+  @override
+  State<_FlowPanelMotion> createState() => _FlowPanelMotionState();
+}
+
+class _FlowPanelMotionState extends State<_FlowPanelMotion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<Offset> _translation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _BattleRoomPageState._flowAnimationDuration,
+      animationBehavior: AnimationBehavior.preserve,
+      value: widget.visible ? 1 : 0,
+    );
+    _updateTranslation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FlowPanelMotion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hiddenOffset != widget.hiddenOffset) {
+      _updateTranslation();
+    }
+    if (oldWidget.visible == widget.visible) return;
+    if (widget.visible) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  void _updateTranslation() {
+    _translation = Tween<Offset>(begin: widget.hiddenOffset, end: Offset.zero)
+        .animate(
+          CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic),
+        );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: SlideTransition(position: _translation, child: widget.child),
+    );
+  }
+}
+
 class _SwapSelectionLayer extends StatelessWidget {
   const _SwapSelectionLayer({
     required this.controller,
     required this.compact,
+    required this.visible,
+    required this.flowTransitioning,
     required this.focusNodes,
-    required this.onCancel,
     required this.onSelected,
   }) : assert(focusNodes.length == 3);
 
   final BattleController controller;
   final bool compact;
+  final bool visible;
+  final bool flowTransitioning;
   final List<FocusNode> focusNodes;
-  final VoidCallback onCancel;
   final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final visible = controller.isSwapOverlayVisible;
-    final swapIndexes = controller.playerSwapIndexes;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final halfHeight = constraints.maxHeight / 2;
+        final opponentPanelWidth = (constraints.maxWidth * 0.24)
+            .clamp(180.0, 280.0)
+            .toDouble();
+        final playerPanelWidth = (constraints.maxWidth * 0.345)
+            .clamp(238.0, 390.0)
+            .toDouble();
 
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        opacity: visible ? 1 : 0,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-        child: ColoredBox(
-          color: Colors.black.withValues(alpha: 0.58),
-          child: Center(
-            child: Container(
-              width: compact ? 430 : 560,
-              margin: const EdgeInsets.all(20),
-              padding: EdgeInsets.fromLTRB(
-                compact ? 16 : 22,
-                compact ? 14 : 20,
-                compact ? 16 : 22,
-                compact ? 16 : 22,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.charcoal,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.teal, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.teal.withValues(alpha: 0.32),
-                    blurRadius: 24,
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        return ExcludeFocus(
+          excluding: !visible || flowTransitioning,
+          child: ExcludeSemantics(
+            excluding: !visible,
+            child: IgnorePointer(
+              ignoring: !visible || flowTransitioning,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Text(
-                    'SWAP CHAMPION',
-                    style: TextStyle(
-                      color: AppColors.teal,
-                      fontSize: compact ? 12 : 16,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1,
+                  Positioned(
+                    top: compact ? 12 : 16,
+                    right: -2,
+                    width: opponentPanelWidth,
+                    height: halfHeight - (compact ? 22 : 28),
+                    child: _FlowPanelMotion(
+                      key: const ValueKey('opponent-swap-panel-motion'),
+                      visible: visible,
+                      hiddenOffset: const Offset(1.08, 0),
+                      child: _ExpandedReserveCardGroup(
+                        key: const ValueKey('expanded-opponent-reserve'),
+                        team: controller.opponentTeam,
+                        compact: compact,
+                        accent: AppColors.danger,
+                      ),
                     ),
                   ),
-                  SizedBox(height: compact ? 12 : 18),
-                  Row(
-                    children: [
-                      for (var index = 0; index < swapIndexes.length; index++)
-                        Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              left: index == 0 ? 0 : 8,
-                              right: index == swapIndexes.length - 1 ? 0 : 8,
-                            ),
-                            child: _SwapTargetButton(
-                              combatant: controller
-                                  .playerTeam
-                                  .combatants[swapIndexes[index]],
-                              shortcutNumber: index + 1,
-                              compact: compact,
-                              focusNode: focusNodes[index],
-                              onPressed: () => onSelected(swapIndexes[index]),
-                            ),
-                          ),
-                        ),
-                    ],
+                  Positioned(
+                    top: halfHeight + (compact ? 10 : 14),
+                    right: -2,
+                    bottom: compact ? 12 : 16,
+                    width: playerPanelWidth,
+                    child: _FlowPanelMotion(
+                      key: const ValueKey('player-swap-panel-motion'),
+                      visible: visible,
+                      hiddenOffset: const Offset(1.08, 0),
+                      child: _ExpandedReserveCardGroup(
+                        key: const ValueKey('expanded-player-reserve'),
+                        team: controller.playerTeam,
+                        compact: compact,
+                        accent: AppColors.paper,
+                        eligibleSwapIndexes:
+                            controller.player.hasStatus(StatusType.swapLocked)
+                            ? const []
+                            : controller.playerSwapIndexes,
+                        focusNodes: focusNodes,
+                        onSelected: onSelected,
+                      ),
+                    ),
                   ),
-                  SizedBox(height: compact ? 12 : 16),
-                  TextButton.icon(
-                    focusNode: focusNodes[2],
-                    onPressed: onCancel,
-                    icon: const Icon(Icons.close_rounded),
-                    label: const Text('3  CANCEL'),
-                  ),
+                  if (visible)
+                    const SizedBox(key: ValueKey('swap-flow-visible')),
                 ],
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _SpeciesCardSelectionLayer extends StatelessWidget {
+  const _SpeciesCardSelectionLayer({
+    required this.controller,
+    required this.compact,
+    required this.visible,
+    required this.flowTransitioning,
+    required this.focusNodes,
+    required this.onSelected,
+  }) : assert(focusNodes.length == 3);
+
+  final BattleController controller;
+  final bool compact;
+  final bool visible;
+  final bool flowTransitioning;
+  final List<FocusNode> focusNodes;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final halfHeight = constraints.maxHeight / 2;
+        final logWidth = math.max(120.0, constraints.maxWidth / 6);
+        final menuLeft = 20 + logWidth + (compact ? 8 : 12);
+        final menuRight = compact ? 42.0 : 58.0;
+        final topHeight = (halfHeight * 0.64).clamp(142.0, 210.0);
+        final bottomHeight = (halfHeight * 0.72).clamp(158.0, 230.0);
+
+        return ExcludeFocus(
+          excluding: !visible || flowTransitioning,
+          child: ExcludeSemantics(
+            excluding: !visible,
+            child: IgnorePointer(
+              ignoring: !visible || flowTransitioning,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    left: menuLeft,
+                    right: menuRight,
+                    top: -2,
+                    height: topHeight,
+                    child: _FlowPanelMotion(
+                      key: const ValueKey('opponent-species-panel-motion'),
+                      visible: visible,
+                      hiddenOffset: const Offset(0, -1.08),
+                      child: _SpeciesCardMenu(
+                        key: const ValueKey('opponent-species-card-menu'),
+                        team: controller.opponentTeam,
+                        compact: compact,
+                        isOpponent: true,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: menuLeft,
+                    right: menuRight,
+                    bottom: -2,
+                    height: bottomHeight,
+                    child: _FlowPanelMotion(
+                      key: const ValueKey('player-species-panel-motion'),
+                      visible: visible,
+                      hiddenOffset: const Offset(0, 1.08),
+                      child: _SpeciesCardMenu(
+                        key: const ValueKey('player-species-card-menu'),
+                        team: controller.playerTeam,
+                        compact: compact,
+                        isOpponent: false,
+                        selectedIndex:
+                            controller.state.pendingPlayerSpeciesCardIndex,
+                        focusNodes: focusNodes,
+                        onSelected: onSelected,
+                      ),
+                    ),
+                  ),
+                  if (visible)
+                    const SizedBox(key: ValueKey('species-flow-visible')),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SpeciesCardMenu extends StatelessWidget {
+  const _SpeciesCardMenu({
+    super.key,
+    required this.team,
+    required this.compact,
+    required this.isOpponent,
+    this.selectedIndex,
+    this.focusNodes,
+    this.onSelected,
+  });
+
+  final BattleTeam team;
+  final bool compact;
+  final bool isOpponent;
+  final int? selectedIndex;
+  final List<FocusNode>? focusNodes;
+  final ValueChanged<int>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = isOpponent ? AppColors.danger : AppColors.paper;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.earth.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.only(
+          bottomLeft: isOpponent ? const Radius.circular(13) : Radius.zero,
+          bottomRight: isOpponent ? const Radius.circular(13) : Radius.zero,
+          topLeft: isOpponent ? Radius.zero : const Radius.circular(13),
+          topRight: isOpponent ? Radius.zero : const Radius.circular(13),
+        ),
+        border: Border.all(color: accent, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.34),
+            blurRadius: 12,
+            offset: Offset(0, isOpponent ? 3 : -3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 9 : 12,
+          compact ? 8 : 11,
+          compact ? 9 : 12,
+          compact ? 9 : 11,
+        ),
+        child: Row(
+          children: [
+            for (var index = 0; index < team.speciesCardSlots.length; index++)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6),
+                  child: _SpeciesCardOption(
+                    team: team,
+                    slot: team.speciesCardSlots[index],
+                    index: index,
+                    compact: compact,
+                    isOpponent: isOpponent,
+                    selected: !isOpponent && selectedIndex == index,
+                    focusNode: isOpponent ? null : focusNodes?[index],
+                    onPressed: isOpponent ? null : () => onSelected!(index),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SwapTargetButton extends StatelessWidget {
-  const _SwapTargetButton({
-    required this.combatant,
-    required this.shortcutNumber,
+class _SpeciesCardOption extends StatelessWidget {
+  const _SpeciesCardOption({
+    required this.team,
+    required this.slot,
+    required this.index,
     required this.compact,
+    required this.isOpponent,
+    required this.selected,
+    required this.focusNode,
+    required this.onPressed,
+  });
+
+  final BattleTeam team;
+  final BattleSpeciesCardSlot slot;
+  final int index;
+  final bool compact;
+  final bool isOpponent;
+  final bool selected;
+  final FocusNode? focusNode;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeCanReceive =
+        !team.active.isDefeated && team.active.equippedSpeciesCard == null;
+    final enabled =
+        !isOpponent && activeCanReceive && !slot.consumed && !slot.lost;
+    final dimmed =
+        slot.consumed || slot.lost || (!isOpponent && !activeCanReceive);
+    final (status, statusColor) = selected
+        ? ('SELECTED', AppColors.teal)
+        : _status();
+    final tooltip = '${slot.card.name}\n${slot.card.effectDescription}';
+
+    return Semantics(
+      selected: selected,
+      child: Tooltip(
+        message: tooltip,
+        waitDuration: const Duration(milliseconds: 300),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: AppColors.deepEarth,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? AppColors.teal : AppColors.paper,
+                    width: selected ? 4 : 2,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: AppColors.teal.withValues(alpha: 0.9),
+                            blurRadius: 18,
+                            spreadRadius: 3,
+                          ),
+                        ]
+                      : const [],
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      slot.card.assetPath,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
+                    if (dimmed)
+                      ColoredBox(color: Colors.black.withValues(alpha: 0.48)),
+                    if (selected)
+                      ColoredBox(color: AppColors.teal.withValues(alpha: 0.12)),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: compact ? 6 : 8),
+            SizedBox(
+              height: compact ? 34 : 40,
+              child: Semantics(
+                button: !isOpponent,
+                enabled: enabled,
+                label: '$status, ${slot.card.name}',
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: selected
+                        ? Border.all(color: AppColors.bone, width: 2)
+                        : null,
+                    boxShadow: selected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.teal.withValues(alpha: 0.72),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : const [],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: ValueKey(
+                        '${isOpponent ? 'opponent' : 'player'}-species-card-$index',
+                      ),
+                      focusNode: focusNode,
+                      canRequestFocus: enabled,
+                      onTap: enabled ? onPressed : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              status,
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: compact ? 11 : 13,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  (String, Color) _status() {
+    if (slot.lost) return ('LOST', const Color(0xFFFF4444));
+    if (slot.consumed) {
+      final bearerIndex = slot.bearerIndex;
+      if (bearerIndex != null && bearerIndex < team.combatants.length) {
+        return (
+          'Currently on: ${team.combatants[bearerIndex].champion.name}',
+          const Color(0xFFFF8A2A),
+        );
+      }
+      return ('ALREADY ATTACHED', const Color(0xFFFF8A2A));
+    }
+    if (isOpponent) return ('READY', const Color(0xFF148CF1));
+    if (team.active.equippedSpeciesCard != null || team.active.isDefeated) {
+      return ('UNAVAILABLE', AppColors.earth);
+    }
+    return ('ACTIVATE', const Color(0xFF31C960));
+  }
+}
+
+class _ExpandedReserveCardGroup extends StatelessWidget {
+  const _ExpandedReserveCardGroup({
+    super.key,
+    required this.team,
+    required this.compact,
+    required this.accent,
+    this.eligibleSwapIndexes = const [],
+    this.focusNodes,
+    this.onSelected,
+  });
+
+  final BattleTeam team;
+  final bool compact;
+  final Color accent;
+  final List<int> eligibleSwapIndexes;
+  final List<FocusNode>? focusNodes;
+  final ValueChanged<int>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final reserveIndexes = [
+      for (var index = 0; index < team.combatants.length; index++)
+        if (index != team.activeIndex) index,
+    ];
+    final showSwapButtons = onSelected != null;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.earth.withValues(alpha: 0.58),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(15),
+          bottomLeft: Radius.circular(15),
+        ),
+        border: Border.all(color: accent, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.34),
+            blurRadius: 10,
+            offset: const Offset(-2, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 6 : 8,
+          compact ? 7 : 9,
+          compact ? 7 : 9,
+          compact ? 6 : 8,
+        ),
+        child: Column(
+          children: [
+            Text(
+              'Reserve',
+              style: TextStyle(
+                color: AppColors.bone,
+                fontSize: compact ? 12 : 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            SizedBox(height: compact ? 5 : 8),
+            Expanded(
+              child: Column(
+                children: [
+                  for (
+                    var position = 0;
+                    position < reserveIndexes.length;
+                    position++
+                  ) ...[
+                    Expanded(
+                      child: _ExpandedReserveRow(
+                        reserveIndex: reserveIndexes[position],
+                        combatant: team.combatants[reserveIndexes[position]],
+                        compact: compact,
+                        showSwapButton: showSwapButtons,
+                        swapEnabled: eligibleSwapIndexes.contains(
+                          reserveIndexes[position],
+                        ),
+                        focusNode: showSwapButtons && focusNodes != null
+                            ? focusNodes![position]
+                            : null,
+                        onSwap: showSwapButtons
+                            ? () => onSelected!(reserveIndexes[position])
+                            : null,
+                      ),
+                    ),
+                    if (position != reserveIndexes.length - 1)
+                      SizedBox(height: compact ? 5 : 8),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandedReserveRow extends StatelessWidget {
+  const _ExpandedReserveRow({
+    required this.reserveIndex,
+    required this.combatant,
+    required this.compact,
+    required this.showSwapButton,
+    required this.swapEnabled,
+    this.focusNode,
+    this.onSwap,
+  });
+
+  final int reserveIndex;
+  final Combatant combatant;
+  final bool compact;
+  final bool showSwapButton;
+  final bool swapEnabled;
+  final FocusNode? focusNode;
+  final VoidCallback? onSwap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final rowHeight = constraints.maxHeight;
+        final cardHeight = math.min(rowHeight, compact ? 82.0 : 98.0);
+        final horizontalGap = compact ? 5.0 : 7.0;
+        final swapButtonWidth = math.min(
+          cardHeight * 0.88,
+          constraints.maxWidth * 0.31,
+        );
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Tooltip(
+              message: combatant.champion.name,
+              child: MiniChampionCard.combatant(
+                key: ValueKey('expanded-reserve-${combatant.champion.name}'),
+                size: cardHeight,
+                imageAssetPath:
+                    combatant.champion.closeUpAssetPath ??
+                    combatant.champion.imageAssetPath,
+                currentHealth: combatant.currentHealth,
+                maximumHealth: combatant.maxHealth,
+                defeated: combatant.isDefeated,
+                obscured: false,
+                damageTrigger: 0,
+              ),
+            ),
+            SizedBox(width: horizontalGap),
+            Expanded(
+              child: _ReserveChampionDetails(
+                combatant: combatant,
+                compact: compact,
+              ),
+            ),
+            if (showSwapButton) ...[
+              SizedBox(width: horizontalGap),
+              SizedBox(
+                width: swapButtonWidth,
+                height: cardHeight * 0.84,
+                child: _ReserveSwapButton(
+                  key: ValueKey('swap-target-$reserveIndex'),
+                  combatant: combatant,
+                  enabled: swapEnabled,
+                  focusNode: focusNode,
+                  onPressed: onSwap,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ReserveChampionDetails extends StatelessWidget {
+  const _ReserveChampionDetails({
+    required this.combatant,
+    required this.compact,
+  });
+
+  final Combatant combatant;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final companions = combatant.companions;
+    final speciesCard = combatant.equippedSpeciesCard;
+    final gap = compact ? 3.0 : 4.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  image: true,
+                  label: '${combatant.champion.type.name} champion type',
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = constraints.biggest.shortestSide;
+                      return Center(
+                        child: ChampionTypeEmblem(
+                          type: combatant.champion.type,
+                          size: size,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Tooltip(
+                  message: companions.isEmpty
+                      ? 'No companions'
+                      : companions
+                            .map((companion) => companion.name)
+                            .join(', '),
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: AppColors.sand.withValues(alpha: 0.34),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.ink, width: 2),
+                    ),
+                    child: companions.isEmpty
+                        ? const SizedBox.expand()
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.asset(
+                                companions.first.assetPath,
+                                fit: BoxFit.cover,
+                                filterQuality: FilterQuality.high,
+                              ),
+                              const ColoredBox(color: Color(0x47000000)),
+                              Center(
+                                child: Text(
+                                  '${companions.length}',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: compact ? 14 : 17,
+                                    fontWeight: FontWeight.w900,
+                                    shadows: const [
+                                      Shadow(
+                                        color: Colors.black,
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: gap),
+        Expanded(
+          child: Tooltip(
+            message: speciesCard == null
+                ? 'No equipped species card'
+                : '${speciesCard.name}\n${speciesCard.effectDescription}',
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: AppColors.sand.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.ink, width: 2),
+              ),
+              child: speciesCard == null
+                  ? const SizedBox.expand()
+                  : Image.asset(
+                      speciesCard.assetPath,
+                      fit: BoxFit.cover,
+                      filterQuality: FilterQuality.high,
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReserveSwapButton extends StatelessWidget {
+  const _ReserveSwapButton({
+    super.key,
+    required this.combatant,
+    required this.enabled,
     required this.focusNode,
     required this.onPressed,
   });
 
   final Combatant combatant;
-  final int shortcutNumber;
-  final bool compact;
-  final FocusNode focusNode;
-  final VoidCallback onPressed;
+  final bool enabled;
+  final FocusNode? focusNode;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '$shortcutNumber, swap to ${combatant.champion.name}',
-      child: Material(
-        color: AppColors.ink.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          focusNode: focusNode,
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: EdgeInsets.all(compact ? 8 : 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$shortcutNumber',
-                  style: TextStyle(
-                    color: AppColors.amber,
-                    fontSize: compact ? 13 : 16,
-                    fontWeight: FontWeight.w900,
+      enabled: enabled,
+      label: 'Swap to ${combatant.champion.name}',
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: Material(
+          color: enabled ? AppColors.teal : AppColors.earth,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: AppColors.ink, width: 2),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            focusNode: focusNode,
+            canRequestFocus: enabled,
+            onTap: enabled ? onPressed : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Image.asset(
+                      'assets/images/swap_icon.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
                   ),
-                ),
-                SizedBox(height: compact ? 6 : 8),
-                ChampionCard(
-                  champion: combatant.champion,
-                  height: compact ? 86 : 116,
-                  currentHealth: combatant.currentHealth,
-                  maximumHealth: combatant.maxHealth,
-                  defeated: combatant.isDefeated,
-                ),
-                SizedBox(height: compact ? 5 : 7),
-                _StatusStrip(combatant: combatant, compact: true),
-              ],
+                  const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'SWAP',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 11,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
-}
-
-class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({required this.combatant, required this.compact});
-
-  final Combatant combatant;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    if (combatant.statuses.isEmpty) {
-      return SizedBox(height: compact ? 10 : 14);
-    }
-
-    return SizedBox(
-      height: compact ? 12 : 16,
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: compact ? 3 : 5,
-        runSpacing: 2,
-        children: [
-          for (final status in combatant.statuses)
-            Tooltip(
-              message: status.type.label,
-              child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 4 : 5,
-                  vertical: 1,
-                ),
-                decoration: BoxDecoration(
-                  color: _statusColor(status.type).withValues(alpha: 0.24),
-                  borderRadius: BorderRadius.circular(99),
-                  border: Border.all(color: _statusColor(status.type)),
-                ),
-                child: Text(
-                  status.stacks > 1
-                      ? '${status.type.shortLabel}x${status.stacks}'
-                      : status.type.shortLabel,
-                  style: TextStyle(
-                    color: AppColors.bone,
-                    fontSize: compact ? 6.5 : 8,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Color _statusColor(StatusType type) => switch (type) {
-    StatusType.intimidation => AppColors.amber,
-    StatusType.bleeding => AppColors.danger,
-    StatusType.brokenBone => const Color(0xFFECE0CC),
-    StatusType.alphaMomentum => AppColors.teal,
-    StatusType.protectiveScales => const Color(0xFF82B0FF),
-    StatusType.famine => const Color(0xFFA36B34),
-    StatusType.jaggedScales => const Color(0xFFC7D16B),
-    StatusType.secondaryImmunity => AppColors.teal,
-    StatusType.totalCover => const Color(0xFFB8C6D9),
-    StatusType.swapLocked => AppColors.danger,
-    StatusType.spikeEnclosure => const Color(0xFFD99154),
-    StatusType.groundedRegeneration => const Color(0xFF78A66A),
-  };
 }
 
 class _ResultBanner extends StatelessWidget {
@@ -1909,36 +3196,6 @@ class _GameOverPanel extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ModeBadge extends StatelessWidget {
-  const _ModeBadge({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 12,
-        vertical: compact ? 5 : 7,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.ink.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: AppColors.sand.withValues(alpha: 0.42)),
-      ),
-      child: Text(
-        'FOSSIL RACE · ROUND 1',
-        style: TextStyle(
-          color: AppColors.sand,
-          fontSize: compact ? 7 : 10,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.8,
         ),
       ),
     );

@@ -48,6 +48,8 @@ class BattleState {
       phase == BattlePhase.choosingMove ||
       (phase == BattlePhase.resolving && lastResolution == null);
   bool get isSwapOverlayVisible => phase == BattlePhase.swapping;
+  bool get isSpeciesCardOverlayVisible =>
+      phase == BattlePhase.choosingSpeciesCard;
   bool get canShowdown {
     if (phase != BattlePhase.choosingMove || playerGesture == null) {
       return false;
@@ -61,11 +63,15 @@ class BattleState {
       playerSwapIndexes.isNotEmpty &&
       !player.hasStatus(StatusType.swapLocked);
 
+  bool get canOpenSpeciesCards =>
+      phase == BattlePhase.command && !player.isDefeated;
+
   bool canSelectPlayerSpeciesCard(int index) {
-    return phase == BattlePhase.command &&
+    return phase == BattlePhase.choosingSpeciesCard &&
         index >= 0 &&
         index < playerTeam.speciesCardSlots.length &&
         !playerTeam.speciesCardSlots[index].consumed &&
+        !playerTeam.speciesCardSlots[index].lost &&
         !playerTeam.active.isDefeated &&
         playerTeam.active.equippedSpeciesCard == null;
   }
