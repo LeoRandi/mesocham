@@ -9,6 +9,32 @@ import '../../../champions/presentation/widgets/battle_gesture_icon.dart';
 import '../../../champions/presentation/widgets/champion_move_details.dart';
 import '../../domain/entities/battle_gesture.dart';
 
+class GestureDetailsController {
+  Object? _pinnedOwner;
+  VoidCallback? _dismissPinnedDetails;
+
+  void pin(Object owner, VoidCallback dismiss) {
+    if (identical(_pinnedOwner, owner)) return;
+    final previousDismiss = _dismissPinnedDetails;
+    _pinnedOwner = owner;
+    _dismissPinnedDetails = dismiss;
+    previousDismiss?.call();
+  }
+
+  void release(Object owner) {
+    if (!identical(_pinnedOwner, owner)) return;
+    _pinnedOwner = null;
+    _dismissPinnedDetails = null;
+  }
+
+  void dismiss() {
+    final dismissPinnedDetails = _dismissPinnedDetails;
+    _pinnedOwner = null;
+    _dismissPinnedDetails = null;
+    dismissPinnedDetails?.call();
+  }
+}
+
 class GestureWheel extends StatelessWidget {
   const GestureWheel({
     super.key,
@@ -21,6 +47,7 @@ class GestureWheel extends StatelessWidget {
     required this.showDetails,
     this.onSelected,
     this.focusNodes,
+    this.detailsController,
   }) : assert(focusNodes == null || focusNodes.length == 3);
 
   final Champion champion;
@@ -32,6 +59,7 @@ class GestureWheel extends StatelessWidget {
   final bool isOpponent;
   final bool showDetails;
   final List<FocusNode>? focusNodes;
+  final GestureDetailsController? detailsController;
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +130,7 @@ class GestureWheel extends StatelessWidget {
         focusNode: focusNodes?[index],
         shortcutNumber: focusNodes == null ? null : index + 1,
         onTap: onSelected == null ? null : () => onSelected!(gesture),
+        detailsController: detailsController,
       ),
     );
   }
@@ -168,6 +197,7 @@ class _GestureChoice extends StatefulWidget {
     required this.focusNode,
     required this.shortcutNumber,
     required this.onTap,
+    required this.detailsController,
   });
 
   final BattleGesture gesture;
@@ -180,6 +210,7 @@ class _GestureChoice extends StatefulWidget {
   final FocusNode? focusNode;
   final int? shortcutNumber;
   final VoidCallback? onTap;
+  final GestureDetailsController? detailsController;
 
   @override
   State<_GestureChoice> createState() => _GestureChoiceState();
@@ -188,6 +219,7 @@ class _GestureChoice extends StatefulWidget {
 class _GestureChoiceState extends State<_GestureChoice> {
   bool _focused = false;
   bool _hovered = false;
+  bool _detailsPinned = false;
   OverlayEntry? _detailsEntry;
   Offset _pointerPosition = Offset.zero;
 
@@ -195,12 +227,15 @@ class _GestureChoiceState extends State<_GestureChoice> {
   void didUpdateWidget(covariant _GestureChoice oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.showDetails || oldWidget.move != widget.move) {
+      widget.detailsController?.release(this);
+      _detailsPinned = false;
       _removeDetails();
     }
   }
 
   @override
   void dispose() {
+    widget.detailsController?.release(this);
     _removeDetails();
     super.dispose();
   }
@@ -211,7 +246,7 @@ class _GestureChoiceState extends State<_GestureChoice> {
     final shortcutPrefix = widget.shortcutNumber == null
         ? ''
         : '${widget.shortcutNumber}, ';
-    final highlighted = _focused || _hovered;
+    final highlighted = _focused || _hovered || _detailsPinned;
     final selectable = widget.enabled && widget.onTap != null;
 
     return Semantics(
@@ -231,7 +266,7 @@ class _GestureChoiceState extends State<_GestureChoice> {
         onHover: (event) => _updateDetailsPosition(event.position),
         onExit: (_) {
           setState(() => _hovered = false);
-          _removeDetails();
+          if (!_detailsPinned) _removeDetails();
         },
         child: Material(
           color: Colors.transparent,
@@ -247,10 +282,16 @@ class _GestureChoiceState extends State<_GestureChoice> {
             onFocusChange: (focused) => setState(() => _focused = focused),
             onTap: selectable
                 ? () {
+                    if (widget.detailsController case final controller?) {
+                      controller.dismiss();
+                    } else {
+                      _dismissPinnedPreview();
+                    }
                     widget.focusNode?.requestFocus();
                     widget.onTap!();
                   }
                 : null,
+            onLongPress: widget.showDetails ? _pinDetails : null,
             child: AnimatedScale(
               scale: widget.selected ? 1.13 : (highlighted ? 1.06 : 0.96),
               duration: const Duration(milliseconds: 220),
@@ -297,6 +338,28 @@ class _GestureChoiceState extends State<_GestureChoice> {
     );
   }
 
+  void _pinDetails() {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) return;
+
+    widget.detailsController?.pin(this, _dismissPinnedPreview);
+    setState(() => _detailsPinned = true);
+    _showDetails(
+      renderObject.localToGlobal(renderObject.size.center(Offset.zero)),
+    );
+  }
+
+  void _dismissPinnedPreview() {
+    widget.detailsController?.release(this);
+    if (!_detailsPinned) return;
+    if (mounted) {
+      setState(() => _detailsPinned = false);
+    } else {
+      _detailsPinned = false;
+    }
+    if (!_hovered) _removeDetails();
+  }
+
   void _showDetails(Offset globalPosition) {
     if (!widget.showDetails) return;
     _pointerPosition = globalPosition;
@@ -339,20 +402,23 @@ class _GestureChoiceState extends State<_GestureChoice> {
           : null,
       width: popupWidth,
       child: IgnorePointer(
-        child: Material(
-          key: ValueKey(
-            '${widget.isOpponent ? 'opponent' : 'player'}-move-details-'
-            '${widget.gesture.name}',
-          ),
-          elevation: 18,
-          shadowColor: Colors.black,
-          color: AppColors.bone,
-          borderRadius: BorderRadius.circular(widget.compact ? 9 : 12),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maximumHeight),
-            child: SingleChildScrollView(
-              child: ChampionMoveDetails(move: widget.move, compact: true),
+        ignoring: !_detailsPinned,
+        child: AbsorbPointer(
+          child: Material(
+            key: ValueKey(
+              '${widget.isOpponent ? 'opponent' : 'player'}-move-details-'
+              '${widget.gesture.name}',
+            ),
+            elevation: 18,
+            shadowColor: Colors.black,
+            color: AppColors.bone,
+            borderRadius: BorderRadius.circular(widget.compact ? 9 : 12),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maximumHeight),
+              child: SingleChildScrollView(
+                child: ChampionMoveDetails(move: widget.move, compact: true),
+              ),
             ),
           ),
         ),

@@ -7,6 +7,7 @@ import 'package:mesocham/features/battle/domain/entities/battle_gesture.dart';
 import 'package:mesocham/features/battle/presentation/widgets/gesture_wheel.dart';
 import 'package:mesocham/features/champions/data/local/local_champion_catalog.dart';
 import 'package:mesocham/features/champions/presentation/widgets/battle_gesture_icon.dart';
+import 'package:mesocham/features/companions/presentation/widgets/companion_orb.dart';
 import 'package:mesocham/features/decks/domain/entities/player_deck.dart';
 import 'package:mesocham/features/home/data/player_preferences.dart';
 import 'package:mesocham/features/loading/presentation/pages/game_loading_page.dart';
@@ -381,6 +382,88 @@ void main() {
       expect(
         focusNodeFor(tester, find.byKey(const ValueKey('showdown'))).hasFocus,
         isTrue,
+      );
+      await mouse.removePointer();
+    },
+  );
+
+  testWidgets(
+    'long press pins move details and wild companion hover explains its effect',
+    (tester) async {
+      await pumpGame(tester);
+      tester.view.physicalSize = const Size(835, 528);
+      await tester.pump();
+
+      Navigator.of(
+        tester.element(find.byType(Scaffold)),
+      ).pushNamed<void>('/battle');
+      await pumpFor(tester, const Duration(milliseconds: 800));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await pumpFor(tester, const Duration(milliseconds: 600));
+
+      final playerRock = find.byKey(const ValueKey('battle-move-rock'));
+      final playerRockDetails = find.byKey(
+        const ValueKey('player-move-details-rock'),
+      );
+      await tester.longPress(playerRock);
+      await tester.pump();
+      expect(playerRockDetails, findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      expect(playerRockDetails, findsOneWidget);
+
+      await tester.tapAt(tester.getCenter(playerRockDetails));
+      await tester.pump();
+      expect(playerRockDetails, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('selected-battle-move-rock')),
+        findsNothing,
+      );
+
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump();
+      expect(playerRockDetails, findsNothing);
+
+      await tester.longPress(playerRock);
+      await tester.pump();
+      expect(playerRockDetails, findsOneWidget);
+
+      final opponentPaper = find.byKey(const ValueKey('opponent-move-paper'));
+      await tester.longPress(opponentPaper);
+      await tester.pump();
+      expect(playerRockDetails, findsNothing);
+      expect(
+        find.byKey(const ValueKey('opponent-move-details-paper')),
+        findsOneWidget,
+      );
+
+      await tester.tap(playerRock);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        find.byKey(const ValueKey('opponent-move-details-paper')),
+        findsNothing,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.numpad4);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await pumpFor(tester, const Duration(milliseconds: 2200));
+
+      final wildCompanionFinder = find.byWidgetPredicate(
+        (widget) => widget is CompanionOrb && widget.wild,
+      );
+      expect(wildCompanionFinder, findsOneWidget);
+      final wildCompanion = tester
+          .widget<CompanionOrb>(wildCompanionFinder)
+          .companion;
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1, 1));
+      await mouse.moveTo(tester.getCenter(wildCompanionFinder));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(
+        find.text('${wildCompanion.name}\n${wildCompanion.effectDescription}'),
+        findsOneWidget,
       );
       await mouse.removePointer();
     },

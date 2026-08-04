@@ -159,7 +159,11 @@ class _HomeTitle extends StatelessWidget {
               constraints.maxHeight < 430 || constraints.maxWidth < 760;
           final emblemSize = compact ? 78.0 : 122.0;
           final titleSize = compact ? 41.0 : 70.0;
-          final titleSideWidth = titleSize * 6.5;
+          final titleSideWidth = _titleWordWidth(
+            context,
+            text: 'CHAMPIONS',
+            fontSize: titleSize,
+          );
           final contentWidth = (constraints.maxWidth * 0.94)
               .clamp(0.0, 1540.0)
               .toDouble();
@@ -390,17 +394,14 @@ class _OutlinedTitleWord extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseStyle = TextStyle(
-      fontSize: fontSize,
-      fontWeight: FontWeight.w900,
-      height: 0.9,
-      letterSpacing: fontSize * 0.035,
-    );
+    final baseStyle = _titleTextStyle(fontSize);
 
     return Stack(
       children: [
         Text(
           text,
+          maxLines: 1,
+          softWrap: false,
           style: baseStyle.copyWith(
             foreground: Paint()
               ..style = PaintingStyle.stroke
@@ -411,6 +412,8 @@ class _OutlinedTitleWord extends StatelessWidget {
         ),
         Text(
           text,
+          maxLines: 1,
+          softWrap: false,
           style: baseStyle.copyWith(
             color: AppColors.bone,
             shadows: const [
@@ -425,6 +428,29 @@ class _OutlinedTitleWord extends StatelessWidget {
       ],
     );
   }
+}
+
+TextStyle _titleTextStyle(double fontSize) => TextStyle(
+  fontSize: fontSize,
+  fontWeight: FontWeight.w900,
+  height: 0.9,
+  letterSpacing: fontSize * 0.035,
+);
+
+double _titleWordWidth(
+  BuildContext context, {
+  required String text,
+  required double fontSize,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: _titleTextStyle(fontSize)),
+    maxLines: 1,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout();
+  final width = painter.width + fontSize * 0.1;
+  painter.dispose();
+  return width;
 }
 
 class _ChampionLogo extends StatelessWidget {

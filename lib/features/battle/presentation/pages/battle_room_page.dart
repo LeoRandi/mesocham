@@ -87,6 +87,7 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
   final _showdownFocusNode = FocusNode(debugLabel: 'Showdown');
   final _gameOverMenuFocusNode = FocusNode(debugLabel: 'Game over menu');
   final _rematchFocusNode = FocusNode(debugLabel: 'Rematch');
+  final _gestureDetailsController = GestureDetailsController();
 
   @override
   void initState() {
@@ -455,38 +456,44 @@ class _BattleRoomPageState extends State<BattleRoomPage> {
             skipTraversal: true,
             child: FocusTraversalGroup(
               child: Scaffold(
-                body: SafeArea(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact =
-                          constraints.maxHeight < 560 ||
-                          constraints.maxWidth < 900;
-                      return _BattleRoom(
-                        controller: controller,
-                        compact: compact,
-                        presentedFlow: _presentedFlow,
-                        flowTransitioning: _flowTransitioning,
-                        battleActionFocusNodes: _battleActionFocusNodes,
-                        moveFocusNodes: _moveFocusNodes,
-                        mixedMoveOptionFocusNodes: _mixedMoveOptionFocusNodes,
-                        swapFocusNodes: _swapFocusNodes,
-                        speciesCardFocusNodes: _speciesCardFocusNodes,
-                        speciesCardCancelFocusNode: _speciesCardCancelFocusNode,
-                        showdownFocusNode: _showdownFocusNode,
-                        gameOverMenuFocusNode: _gameOverMenuFocusNode,
-                        rematchFocusNode: _rematchFocusNode,
-                        onFight: _startFight,
-                        onSpeciesCards: _startSpeciesCards,
-                        onSelectSpeciesCard: _selectSpeciesCard,
-                        onCancelSpeciesCards: _cancelSpeciesCards,
-                        onSwap: _startSwap,
-                        onCancelSwap: _cancelSwap,
-                        onSelectSwapTarget: _swapPlayerTo,
-                        onShowdown: _showdown,
-                        onRematch: _resetBattle,
-                        onExit: () => Navigator.of(context).pop(),
-                      );
-                    },
+                body: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (_) => _gestureDetailsController.dismiss(),
+                  child: SafeArea(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact =
+                            constraints.maxHeight < 560 ||
+                            constraints.maxWidth < 900;
+                        return _BattleRoom(
+                          controller: controller,
+                          compact: compact,
+                          presentedFlow: _presentedFlow,
+                          flowTransitioning: _flowTransitioning,
+                          battleActionFocusNodes: _battleActionFocusNodes,
+                          moveFocusNodes: _moveFocusNodes,
+                          mixedMoveOptionFocusNodes: _mixedMoveOptionFocusNodes,
+                          swapFocusNodes: _swapFocusNodes,
+                          speciesCardFocusNodes: _speciesCardFocusNodes,
+                          speciesCardCancelFocusNode:
+                              _speciesCardCancelFocusNode,
+                          showdownFocusNode: _showdownFocusNode,
+                          gameOverMenuFocusNode: _gameOverMenuFocusNode,
+                          rematchFocusNode: _rematchFocusNode,
+                          gestureDetailsController: _gestureDetailsController,
+                          onFight: _startFight,
+                          onSpeciesCards: _startSpeciesCards,
+                          onSelectSpeciesCard: _selectSpeciesCard,
+                          onCancelSpeciesCards: _cancelSpeciesCards,
+                          onSwap: _startSwap,
+                          onCancelSwap: _cancelSwap,
+                          onSelectSwapTarget: _swapPlayerTo,
+                          onShowdown: _showdown,
+                          onRematch: _resetBattle,
+                          onExit: () => Navigator.of(context).pop(),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -550,6 +557,7 @@ class _BattleRoom extends StatelessWidget {
     required this.showdownFocusNode,
     required this.gameOverMenuFocusNode,
     required this.rematchFocusNode,
+    required this.gestureDetailsController,
     required this.onFight,
     required this.onSpeciesCards,
     required this.onSelectSpeciesCard,
@@ -575,6 +583,7 @@ class _BattleRoom extends StatelessWidget {
   final FocusNode showdownFocusNode;
   final FocusNode gameOverMenuFocusNode;
   final FocusNode rematchFocusNode;
+  final GestureDetailsController gestureDetailsController;
   final VoidCallback onFight;
   final VoidCallback onSpeciesCards;
   final ValueChanged<int> onSelectSpeciesCard;
@@ -626,32 +635,32 @@ class _BattleRoom extends StatelessWidget {
                   top: (constraints.maxHeight - groundSize) / 2,
                   width: groundSize,
                   height: groundSize,
-                  child: IgnorePointer(
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned.fill(
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: IgnorePointer(
                           child: Image.asset(
                             'assets/images/companion_ground.png',
                             fit: BoxFit.contain,
                             filterQuality: FilterQuality.high,
                           ),
                         ),
-                        if (wildCompanion != null)
-                          Positioned(
-                            left: (groundSize - companionDiameter) / 2,
-                            top: groundSize * 0.1,
-                            child: CompanionOrb(
-                              key: ValueKey(
-                                'available-companion-${wildCompanion.name}',
-                              ),
-                              companion: wildCompanion,
-                              diameter: companionDiameter,
-                              wild: true,
+                      ),
+                      if (wildCompanion != null)
+                        Positioned(
+                          left: (groundSize - companionDiameter) / 2,
+                          top: groundSize * 0.1,
+                          child: CompanionOrb(
+                            key: ValueKey(
+                              'available-companion-${wildCompanion.name}',
                             ),
+                            companion: wildCompanion,
+                            diameter: companionDiameter,
+                            wild: true,
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ],
@@ -727,6 +736,7 @@ class _BattleRoom extends StatelessWidget {
           moveFocusNodes: moveFocusNodes,
           mixedMoveOptionFocusNodes: mixedMoveOptionFocusNodes,
           showdownFocusNode: showdownFocusNode,
+          gestureDetailsController: gestureDetailsController,
           onShowdown: onShowdown,
         ),
         _FlowBackdrop(
@@ -1498,6 +1508,7 @@ class _MoveSelectionLayer extends StatelessWidget {
     required this.moveFocusNodes,
     required this.mixedMoveOptionFocusNodes,
     required this.showdownFocusNode,
+    required this.gestureDetailsController,
     required this.onShowdown,
   });
 
@@ -1507,6 +1518,7 @@ class _MoveSelectionLayer extends StatelessWidget {
   final List<FocusNode> moveFocusNodes;
   final List<FocusNode> mixedMoveOptionFocusNodes;
   final FocusNode showdownFocusNode;
+  final GestureDetailsController gestureDetailsController;
   final VoidCallback onShowdown;
 
   @override
@@ -1542,6 +1554,7 @@ class _MoveSelectionLayer extends StatelessWidget {
                         label: 'Rival move wheel',
                         isOpponent: true,
                         showDetails: visible,
+                        detailsController: gestureDetailsController,
                       ),
                     ),
                   ),
@@ -1567,6 +1580,7 @@ class _MoveSelectionLayer extends StatelessWidget {
                         isOpponent: false,
                         showDetails: visible,
                         focusNodes: moveFocusNodes,
+                        detailsController: gestureDetailsController,
                       ),
                     ),
                   ),
